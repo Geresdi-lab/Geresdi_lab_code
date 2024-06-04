@@ -39,7 +39,9 @@ from qcodes.instrument_drivers.Lakeshore.Model_372 import Model_372
 
 def InsertText( text: str,
                 filepath: str ):
-    
+        '''
+        At the given file path in inserts the text at the beginning of the file
+        '''
     with open( filepath, 'r+') as file:
         content = file.read()
         file.seek(0, 0)

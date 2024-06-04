@@ -44,8 +44,8 @@ from scipy.signal import lfilter
 
 from matplotlib import cm
 from matplotlib.ticker import LinearLocator
-import Class_Vitto.qtplot_data_vVitto as qt
-from Class_Vitto.qtplot_data_vVitto import *
+import Class_Vitto.qtplot_data_Vitto as qt
+from Class_Vitto.qtplot_data_Vitto import *
 
 #----------------------------------------------------------------------------------------------------------------------------------------
 #----------------------------------------------------------------------------------------------------------------------------------------

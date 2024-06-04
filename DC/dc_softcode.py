@@ -1,9 +1,9 @@
-''' DC_M_softcode_v0.py contains functions and classes that can be used to improve DC measurement on 'Ask' 
+''' dc_softcode.py contains functions and classes that can be used to improve DC measurement on 'Ask' 
 It is called 'softcode' because it is not meant to control the actual measurement, but to collect all the info we need for that and pass them to the 'hardcode'.
 GENERAL RULES:
 
 1) New functions/classes have to be written following a readable spacing/naming strategy...
-2) If New funcitons/classis are added or major changes are implemented a new version '..._vx.py' has to be created because we should somehow keep track of the scripts
+2) If New functions/classes are added or major changes are implemented a new version '..._vx.py' has to be created because we should somehow keep track of the scripts
 we used
 ...
 
@@ -44,13 +44,14 @@ from scipy.signal import lfilter
 
 from matplotlib import cm
 from matplotlib.ticker import LinearLocator
-import Geresdi_lab_code.DC.Measurement.qtplot_data_vVitto as qt
-from Geresdi_lab_code.DC.Measurement.qtplot_data_vVitto  import *
+import Geresdi_lab_code.DC.qtplot_data as qt
+from Geresdi_lab_code.DC.qtplot_data  import *
 
 #----------------------------------------------------------------------------------------------------------------------------------------
 #----------------------------------------------------------------------------------------------------------------------------------------
 #----------------------------------------------------------------------------------------------------------------------------------------
-''' Here we collect in a dictionary the rack configuration as we want them to be saved in the data file. Some of them can be further customize, for example 
+''' 
+Here we collect in a dictionary the rack configuration as we want them to be saved in the data file. Some of them can be further customize, for example 
 with 'dac' names or amplification factor. 
 
 GENERAL RULES:
@@ -74,12 +75,12 @@ Vm_ivvi_config_ac = r'Vm: M2b 100V/V dc + ac {}kV/V_ M0a 1kHz Out1 _ Keithley 10
 Im_ivvi_config_ln = r'Im: M1h Low Noise x1 {}MV/A on _ M0a 1kHz Out2 _ Keithley 102.'  
 Im_ivvi_config_ln_x100dc = r'Im: M1h Low Noise x100dc {}MV/A on _ M0a 1kHz Out2 _ Keithley 102.' 
 Im_ivvi_config_ln_x100ac = r'Im: M1h Low Noise x100ac {}MV/A on _ M0a 1kHz Out2 _ Keithley 102.' 
-
+# ln is low noise
 
 Im_ivvi_config_lrin = r'Im: M1h Low Rin x1 {}MV/A on _ M0a 1kHz Out2 _ Keithley 102.'  
 Im_ivvi_config_lrin_x100dc = r'Im: M1h Low Rin x100dc {}MV/A on _ M0a 1kHz Out2 _ Keithley 102.' 
 Im_ivvi_config_lrin_x100ac = r'Im: M1h Low Rin x100ac {}MV/A on _ M0a 1kHz Out2 _ Keithley 102.' 
-
+# lrin means low Rin
 
 lockin_bias_dV_to_dV = r'dVb: lockin signal output (+V) On Range 1V Offset 0V frequency {}Hz _ S0a In1 1kHz 10mV/V _ S3b (see Vs or Vb).'
 lockin_bias_dV_to_dI = r'dIb: lockin signal output (+V) On Range 1V Offset 0V frequency {}Hz _ S0a In1 1kHz 10mV/V _ IVd (see Is or Ib).'
@@ -117,7 +118,7 @@ rack = {
 G_source_line = lambda  rack_config, s_or_b, dac, c: rack_config.format( s_or_b, dac ) + '\n\t\tp = {}'.format( c )
 
 source_line = lambda  rack_config, s_or_b, dac, mV_or_nA_per_V, c4, c2 : rack_config.format( s_or_b, dac, mV_or_nA_per_V ) + '\n\t\tp4 = {}\n\t\tp2 = {}'.format( c4, c2 )
-measure_line = lambda rack_config, kV_or_MV_per_V_or_A, c4, c2 : rack_config.format( kV_or_MV_per_V_or_A ) + '\n\t\tp4 = {}\n\t\tp2 = {}'.format( c4, c2 )  
+measure_line = lambda rack_config, amplifcation_on_module, c4, c2 : rack_config.format( amplifcation_on_module ) + '\n\t\tp4 = {}\n\t\tp2 = {}'.format( c4, c2 )  
 
 Vm_line = lambda rack_config, kV_over_V_ac, c4, c2 : rack_config.format( kV_over_V_ac ) + '\n\t\tp4 = {}\n\t\tp2 = {}'.format( c4, c2 )  
 Im_line = lambda rack_config, MV_over_A, c4, c2 :  rack_config.format( MV_over_A ) + '\n\t\tp4 = {}\n\t\tp2 = {}'.format( c4, c2 ) 
@@ -130,7 +131,7 @@ lockin_source_line = lambda rack_config, frequency: rack_config.format( frequenc
 #----------------------------------------------------------------------------------------------------------------------------------------
 
 
-''' Below we difine some classes that help us collecting the info of our setup and what kind of measurement we want.
+''' Below we define some classes that help us collecting the info of our setup and what kind of measurement we want.
 We have Device, Gate, Source, Measure, Lock_IN and Lock_OUT. At some point we need to add Magnet and Temperature.'''
 
         
@@ -139,20 +140,33 @@ We have Device, Gate, Source, Measure, Lock_IN and Lock_OUT. At some point we ne
 #----------------------------------------------------------------------------------------------------------------------------------------        
         
 class Gate:
+    '''
+    WARNING: Preliminary code
     
-    def __init__( self, rack, dac, sweep_or_bias, sweep_back = False, mV_per_s = 50, unit = 'mV', c1 = '' ):
+    INPUT:
+    rack: e.g. SC.rack['Gx1'] (unclear)
+    dac: which dac is used for the gates
+    amplification: howmuch amp do you use? 
+                   If you apply 5x, the saved data is what you actually apply at the DAC
+    sweep_or_bias: do you sweep or bias (deprecated)
+    sweep_back : in case you want to sweep back (untested)
+    mv_per_s: deprecated
+    unit: units you write down the voltae
+    cl: contact you connect the gating voltage to
+    '''
+    def __init__( self, rack, dac, sweep_or_bias, amplification = 1, sweep_back = False, mV_per_s = 20, unit = 'mV', c1 = '' ):
         
         self.rack0 = rack
         self.dac = dac
-        self.c1 = c1        
-        self.V_per_V = int( self.line.split('V/V')[ 0 ].split( ' ' )[-1] )
+        #self.V_per_V = int( self.line.split('V/V')[ 0 ].split( ' ' )[-1] )
+        self.V_per_V = amplification
         self.sweep_or_bias = sweep_or_bias
         self.sweep_back = sweep_back
         self.mV_per_s = mV_per_s
         self.unit = unit
+        self.c1 = c1
 
-        
-    
+
     @property
     def name( self ):
             
@@ -178,8 +192,8 @@ class Gate:
         try: size = len( self.sweep_or_bias )
         except: size = 1
         
-        do_times = self.V_per_V*1e-3
-        
+        do_times = self.V_per_V
+        #do_times = self.V_per_V
         return '\n\tname: {}\n\tdo_times: {}\n\tsize: {}\n\ttype: coordinate\n'.format( self.name, do_times, size )
     
     @property
@@ -210,7 +224,10 @@ class Gate:
 #----------------------------------------------------------------------------------------------------------------------------------------    
         
 class Source:
-    
+    '''
+    mV or nA per V is determined from the S3b module in case of voltage application
+    c4 and c2 (ground) are the port numbers in the matrix module that you connect the source to
+    '''
     def __init__( self, rack, dac, mV_or_nA_per_V, sweep_or_bias, sweep_back = False, mV_per_s = False, unit = 'mV', c4 = '', c2 = '' ):
         
         self.rack0 = rack
@@ -250,7 +267,7 @@ class Source:
         
         if self.name[ 0 ] == 'I':
                 
-            do_times = 1e-3/self.mV_or_nA_per_V
+            do_times = 1e-9*self.mV_or_nA_per_V
         
         if self.name[ 0 ] == 'V':
             
@@ -287,14 +304,23 @@ class Source:
 #----------------------------------------------------------------------------------------------------------------------------------------   
         
 class Measure:
+    '''
+    WARNING: no additional amp beyond 100 for voltage measurement (for now)!
     
-    def __init__( self, rack, kV_or_MV_per_V_or_A, unit = 'V', c4 = '', c2 = '' ):
+    Amplfication on module: units of MV/V for current.
+                            Remember that the first column is shown in mV!
+                            Leave open if no extra amplification.
+                            Note that we already include a 100 times reduction for M2b 
+                            (don't need to add this since unchangeable for DC)
+    c2 and c4: add matrix module port
+    '''
+    def __init__( self, rack, amplifcation_on_module, unit = 'mV', c4 = '', c2 = '' ):
         
         self.rack0 = rack
-        self.kV_or_MV_per_V_or_A = kV_or_MV_per_V_or_A 
+        self.amplifcation_on_module = amplifcation_on_module 
         self.unit = unit
-        self.c4 = c4
-        self.c2 = c2
+        self.c4 = c4  # cable number 4 - enter the matrix module port
+        self.c2 = c2  # cable number 2 - enter matrix module port
         self.name = self.rack0.split( ':' )[ 0 ]
     
     @property
@@ -304,12 +330,12 @@ class Measure:
         if self.name[ 0 ] == 'I':
             
             additional_amplification = 1
-            
+            #print(self.rack0.split( 'dc' ))
             if len( self.rack0.split( 'dc' ) ) == 2:
                 
                 additional_amplification = 100
                 
-            do_times = 1/( self.kV_or_MV_per_V_or_A*additional_amplification*1e6 )
+            do_times = 1/( self.amplifcation_on_module*additional_amplification*1e6 )
         
         if self.name[ 0 ] == 'V':
             
@@ -320,7 +346,7 @@ class Measure:
     @property
     def line( self ):
         
-        return measure_line( self.rack0, self.kV_or_MV_per_V_or_A, self.c4, self.c2 )  
+        return measure_line( self.rack0, self.amplifcation_on_module, self.c4, self.c2 )  
     
     @property
     def keithley( self ):
@@ -575,11 +601,24 @@ def CreateFilePath( filename: str,
                     filepath: str,
                     number = False
                   ):
-
-# It looks on the given subfolder path and looks for the max Meas_ numer in the folder and automatically gives a number = number + 1 file
-# if number = False. if the file with max Meas_ number has no data inside, it asks you if you want to overwrite that file without creating a new one.
-# You can decide to input the Meas_ number after the filepath so that the funciton will not give it automatically. However there if an interlock if that
-# number already exixts 
+    '''
+    INPUT:
+    filename: name of the file you want your measurements to store in (basic)
+    filefolder: in which folder starting at base path do you want the files to be in
+    filepath: in which base path are the data (hierarchy: two above file)
+    
+    EXAMPLE:
+    Want to save in C:\\Measurement\Ivo\Sample1\data\contact_43-44.txt
+    filename: contact_43-44
+    filefolder: data
+    filepath:  C:\\Measurement\Ivo\Sample1
+    
+    WORKING:
+    It looks on the given subfolder path and looks for the max Meas_ numer in the folder and automatically gives a number = number + 1 file
+    if number = False. if the file with max Meas_ number has no data inside, it asks you if you want to overwrite that file without creating a new one.
+    You can decide to input the Meas_ number after the filepath so that the funciton will not give it automatically. However there if an interlock if that
+    number already exixts 
+    '''
 
    
     path = os.path.join( filepath, filefolder )
@@ -651,7 +690,7 @@ def PutLine(
                 filepath: str
             ):
     
-#Just write a sepaaretion line of -- in the comment part on the file to help reading. 
+#Just write a separation line of -- in the comment part on the file to help reading. 
 
     with open( filepath, 'a+') as f:
 
@@ -840,4 +879,4 @@ def WriteHeaderInfo(
 #----------------------------------------------------------------------------------------------------------------------------------------
 #----------------------------------------------------------------------------------------------------------------------------------------
 #----------------------------------------------------------------------------------------------------------------------------------------
-print( 'DC_M_softcode_v0.py lib imported!' )
+print( 'DC_measurements.py lib imported!' )
