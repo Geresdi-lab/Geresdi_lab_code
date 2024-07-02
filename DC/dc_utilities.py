@@ -8,6 +8,7 @@ from time import sleep
 import numpy as np
 import warnings
 from typing import Union, Tuple
+import os
 '''
 Future possible additions:
 include maximum sweeping speed
@@ -132,8 +133,62 @@ class Station:
                 ):
     
         t = datetime.datetime.now()
-        self.write_time( file_path, '#End', t )       
+        self.write_time( file_path, 'End', t )       
 
+    def get_time_from_line(self, line):
+        """
+        Extracts the time from a line in the format,"#    #End: YYYY-MM-DD HH:MM:SS.ssssss"
+        handling delimiter lines.
+        """
+        if line.startswith("#\t") and (line.startswith("#\tStart") or line.startswith("#\tEnd")):
+            time_str = line.split(": ")[-1].strip()
+            return datetime.datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S.%f")
+        return None
+
+    def process_file(self, filename):
+        """
+        Processes the file to keep only the earliest start time and latest end time,
+        calculates the time difference, and writes it back to the same file.
+        """
+        # Read the file
+        with open(filename, 'r') as f:
+            lines = f.readlines()
+
+        # Initialize variables to store the earliest start time and latest end time
+        earliest_start_time = None
+        latest_end_time = None
+        other_lines = []
+
+        # Iterate over the lines to find the earliest start time and latest end time
+        for line in lines:
+            time = self.get_time_from_line(line)
+            if time:
+                if line.startswith("#\tStart"):
+                    if earliest_start_time is None or time < earliest_start_time:
+                        earliest_start_time = time
+                elif line.startswith("#\tEnd"):
+                    if latest_end_time is None or time > latest_end_time:
+                        latest_end_time = time
+            else:
+                other_lines.append(line)
+
+        # Calculate time difference
+        if earliest_start_time and latest_end_time:
+            time_diff = latest_end_time - earliest_start_time
+
+            # Format time difference
+            time_diff_str = str(time_diff)
+
+            # Prepare the result to be written back to the same file
+            result = [
+                f"#\tStart: {earliest_start_time}\n",
+                f"#\tEnd: {latest_end_time}\n",
+                f"#\tTime Difference: {time_diff_str}\n"
+            ]
+
+            # Write everything back to the same file
+            with open(filename, 'w') as f:
+                f.writelines(result + other_lines)
 
 
 #----------------------------------------------------------------------------------------------------------------------------------------    
@@ -297,8 +352,8 @@ class Station:
         """
         dac = f'dac{dac_index}'
         if warning:
-            if ramp_speed_mV_per_s > 250:
-                warning_message = f"Warning: Ramp speed is above 250 mV/s ({ramp_speed_mV_per_s} mV/s)."
+            if ramp_speed_mV_per_s * amplifier_factor > 250:
+                warning_message = f"Warning: Ramp speed (inc. amplifier) is above 250 mV/s ({ramp_speed_mV_per_s*amplifier_factor} mV/s)."
                 warnings.warn(warning_message)
                 response = input("To proceed, type 'OK': ")
                 if response.lower() != "ok":

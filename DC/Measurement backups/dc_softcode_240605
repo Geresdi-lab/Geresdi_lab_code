@@ -597,51 +597,86 @@ def SetMeasNumber(
 #
 
 def CreateFilePath(filename: str, filefolder: str, filepath: str, number=False):
-    """
-    It looks in the given subfolder path and finds the max Meas_ number in the folder,
-    and automatically assigns number = max number + 1 if number=False.
-    If the file with the max Meas_ number has no data inside, it asks you if you want to overwrite that file without creating a new one.
-    You can input the Meas_ number manually, and the function will check if it already exists.
-    """
-    
-    path = os.path.join(filepath, filefolder)
-    pathlib.Path(path).mkdir(parents=True, exist_ok=True)
-    
-    if not number:
-        meas_number = SetMeasNumber(path)
-    else:
-        if NumberExists(path, number):
-            print("WARNING: File number already exists!\n")
-            while True:
-                flag = input('Keep writing on the same file? (y/n)\n')
-                if flag == 'y':
-                    meas_number = number
-                    break
-                elif flag == 'n':
-                    return -1992
-                else:
-                    print("Invalid input. Please enter 'y' or 'n'.")
+  """
+  INPUT:
+  filename: name of the file you want your measurements to store in (basic)
+  filefolder: in which folder starting at base path do you want the files to be in
+  filepath: in which base path are the data (hierarchy: two above file)
+
+  EXAMPLE:
+  Want to save in C:\\Measurement\Ivo\Sample1\data\contact_43-44.txt
+  filename: contact_43-44
+  filefolder: data
+  filepath:  C:\\Measurement\Ivo\Sample1
+
+  WORKING:
+  It looks on the given subfolder path and looks for the max Meas_ numer in the folder and automatically gives a number = number + 1 file
+  if number = False. if the file with max Meas_ number has no data inside, it asks you if you want to overwrite that file without creating a new one.
+  You can decide to input the Meas_ number after the filepath so that the funciton will not give it automatically. However there if an interlock if that
+  number already exixts 
+  """
+
+  unprocessable_files = []  # List to store unprocessable files
+
+  path = os.path.join(filepath, filefolder)
+  pathlib.Path(path).mkdir(parents=True, exist_ok=True)
+
+  if not number:
+    try:
+      meas_number = SetMeasNumber(path)
+    except Exception as e:
+      unprocessable_files.append(path)
+      print(f"Error setting measurement number for folder {path}: {e}")
+      return -1992
+
+  else:
+    if NumberExists(path, number):
+      print("WARNING: File number already exists!\n")
+
+      YorN = False
+      while not YorN:
+        flag = input("Keep writing on the same file? (y/n)\n")
+        if flag == "y":
+          meas_number = number
+          break
+        elif flag == "n":
+          YorN = True
+          return -1992
         else:
-            meas_number = number
-        
-    newpath = os.path.join(path, f"{filename}_Meas_{meas_number}.txt")
-    
-    if NumberExists(path, meas_number - 1):
-        try:
-            check = qt.DatFile(os.path.join(path, f"{filename}_Meas_{meas_number - 1}.txt"))
-            if len(check.df[check.df.columns[0]]) == 0:
-                while True:
-                    flag = input(f"Meas_{meas_number - 1} has no data. Do you want to overwrite? (y/n)\n")
-                    if flag == 'y':
-                        return os.path.join(path, f"{filename}_Meas_{meas_number - 1}.txt")
-                    elif flag == 'n':
-                        return newpath
-                    else:
-                        print("Invalid input. Please enter 'y' or 'n'.")
-        except Exception as e:
-            print(f"Error checking file {filename}_Meas_{meas_number - 1}: {e}")
-    
-    return newpath
+          print("Invalid input. Please enter 'y' or 'n'.")
+
+  newpath = path + "\\" + filename + "_Meas_{}.txt".format(meas_number)
+
+  if NumberExists(path, meas_number - 1):
+    try:
+      check = qt.DatFile(path + "\\" + filename + "_Meas_{}.txt".format(meas_number - 1))
+      if len(check.df[check.df.columns[0]]) == 0:
+
+        YorN = False
+        while not YorN:
+          flag = input(
+              r"_Meas_{} has no data. Do you want to overwrite? (y/n)\n".format(
+                  meas_number - 1
+              )
+          )
+          if flag == "y":
+            return path + "\\" + filename + "_Meas_{}.txt".format(meas_number - 1)
+            break
+          elif flag == "n":
+            return newpath
+          else:
+            print("Invalid input. Please enter 'y' or 'n'.")
+    except Exception as e:
+      unprocessable_files.append(path + "\\" + filename + "_Meas_{}.txt".format(meas_number - 1))
+      print(f"Error checking file {path}: {e}")
+
+  return newpath
+
+  # Print the list of unprocessable files after the function returns
+  if unprocessable_files:
+    print("The following files could not be processed:")
+    for file in unprocessable_files:
+      print(file)
                 
 #
 #----------------------------------------------------------------------------------------------------------------------------------------
