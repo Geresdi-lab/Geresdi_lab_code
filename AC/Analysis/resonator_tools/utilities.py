@@ -58,6 +58,7 @@ class plotting(object):
         real2 = self.z_data_sim.real
         imag2 = self.z_data_sim.imag
         plt.subplots_adjust(left=None, bottom=None, right=None, top=None, wspace=None, hspace=0.3)
+        
         plt.subplot(221)
         plt.suptitle(title)
         plt.plot(real,imag,label='raw data')
@@ -68,7 +69,10 @@ class plotting(object):
         else:
             plt.xlabel('Re(S$_{11}$)', fontsize = fontsize_user)
             plt.ylabel('Im(S$_{11}$)', fontsize = fontsize_user)
+        plt.xticks(fontsize= fontsize_user)
+        plt.yticks(fontsize= fontsize_user)
         plt.legend()
+        
         plt.subplot(222)
         plt.plot(self.f_data*1e-9,np.absolute(self.z_data_raw),label='raw data')
         plt.plot(self.f_data*1e-9,np.absolute(self.z_data_sim),label='fit')
@@ -77,7 +81,10 @@ class plotting(object):
             plt.ylabel(r'|S$_{21}$|', fontsize = fontsize_user)
         else:
             plt.ylabel(r'|S$_{11}$|', fontsize = fontsize_user)
+        plt.xticks(fontsize= fontsize_user)
+        plt.yticks(fontsize= fontsize_user)
         plt.legend()
+        
         plt.subplot(223)
         plt.plot(self.f_data*1e-9,np.angle(self.z_data_raw),label='raw data')
         plt.plot(self.f_data*1e-9,np.angle(self.z_data_sim),label='fit')
@@ -86,7 +93,10 @@ class plotting(object):
             plt.ylabel(r'arg(|S$_{21}$|)', fontsize = fontsize_user)
         else:
             plt.ylabel(r'arg(|S$_{11}$|)', fontsize = fontsize_user)
+        plt.xticks(fontsize= fontsize_user)
+        plt.yticks(fontsize= fontsize_user)
         plt.legend()
+        
         plt.subplot(224)
         plt.plot(self.f_data*1e-9,np.unwrap(np.angle(self.z_data_raw)),label='raw data')
         plt.plot(self.f_data*1e-9,np.unwrap(np.angle(self.z_data_sim)),label='fit')
@@ -95,6 +105,8 @@ class plotting(object):
             plt.ylabel(r'Unwrapped arg(|S$_{21}$|)', fontsize = fontsize_user)
         else:
             plt.ylabel(r'Unwrapped arg(|S$_{11}$|)', fontsize = fontsize_user)
+        plt.xticks(fontsize= fontsize_user)
+        plt.yticks(fontsize= fontsize_user)
         plt.legend()
         plt.show()
         plt.tight_layout()
@@ -147,53 +159,68 @@ class plotting(object):
         if max_yticks:
             plt.locator_params(axis='y', nbins=max_yticks)
         plt.plot(real2,imag2,label='Fit', color = 'tab:green')
-        plt.xlabel('Re(S21)')
-        plt.ylabel('Im(S21)')
+        plt.xlabel('Re(S21)', fontsize = fontsize_user)
+        plt.ylabel('Im(S21)', fontsize = fontsize_user)
         plt.legend(loc = location)
         plt.title(title)
         plt.tight_layout()
         plt.show()
 
 
-    def plotcalibrateddata(self):
+    def plotcalibrateddata(self, fontsize_user = 12):
         real = self.z_data.real
         imag = self.z_data.imag
         plt.subplots_adjust(left=None, bottom=None, right=None, top=None, wspace=None, hspace=0.3)
         plt.subplot(221)
         plt.plot(real,imag,label='calib')
-        plt.xlabel('Re(S21)')
-        plt.ylabel('Im(S21)')
+        plt.xlabel('Re(S21)', fontsize = fontsize_user)
+        plt.ylabel('Im(S21)', fontsize = fontsize_user)
+        plt.xticks(fontsize= fontsize_user)
+        plt.yticks(fontsize= fontsize_user)
         plt.legend()
+        
         plt.subplot(222)
         plt.plot(self.f_data*1e-9,np.absolute(self.z_data),label='calib')
-        plt.xlabel('f (GHz)')
-        plt.ylabel('|S21|')
+        plt.xlabel('f (GHz)', fontsize = fontsize_user)
+        plt.ylabel('|S21|', fontsize = fontsize_user)
+        plt.xticks(fontsize= fontsize_user)
+        plt.yticks(fontsize= fontsize_user)
         plt.legend()
+        
         plt.subplot(223)
         plt.plot(self.f_data*1e-9,np.angle(self.z_data),label='calib')
-        plt.xlabel('f (GHz)')
-        plt.ylabel('arg(|S21|)')
+        plt.xlabel('f (GHz)', fontsize = fontsize_user)
+        plt.ylabel('arg(|S21|)', fontsize = fontsize_user)
+        plt.xticks(fontsize= fontsize_user)
+        plt.yticks(fontsize= fontsize_user)
         plt.legend()
         plt.show()
         
-    def plotrawdata(self):
+    def plotrawdata(self, fontsize_user = 12):
         real = self.z_data_raw.real
         imag = self.z_data_raw.imag
         plt.subplots_adjust(left=None, bottom=None, right=None, top=None, wspace=None, hspace=0.3)
+        
         plt.subplot(221)
         plt.plot(real,imag,label='rawdata')
-        plt.xlabel('Re(S21)')
-        plt.ylabel('Im(S21)')
+        plt.xlabel('Re(S21)', fontsize= fontsize_user)
+        plt.ylabel('Im(S21)', fontsize= fontsize_user)
+        plt.xticks(fontsize= fontsize_user)
+        plt.yticks(fontsize= fontsize_user)
         plt.legend()
+        
         plt.subplot(222)
         plt.plot(self.f_data*1e-9,np.absolute(self.z_data_raw),label='raw data')
-        plt.xlabel('f (GHz)')
-        plt.ylabel('|S21|')
+        plt.xlabel('f (GHz)',fontsize= fontsize_user)
+        plt.ylabel('|S21|', fontsize= fontsize_user)
+        plt.xticks(fontsize= fontsize_user)
+        plt.yticks(fontsize= fontsize_user)
         plt.legend()
+        
         plt.subplot(223)
         plt.plot(self.f_data*1e-9,np.angle(self.z_data_raw),label='raw data')
-        plt.xlabel('f (GHz)')
-        plt.ylabel('arg(|S21|)')
+        plt.xlabel('f (GHz)', fontsize= fontsize_user)
+        plt.ylabel('arg(|S21|)', fontsize= fontsize_user)
         plt.legend()
         plt.show()
         
