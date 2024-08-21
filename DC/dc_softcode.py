@@ -51,8 +51,8 @@ from Geresdi_lab_code.DC.qtplot_data  import *
 #----------------------------------------------------------------------------------------------------------------------------------------
 #----------------------------------------------------------------------------------------------------------------------------------------
 ''' 
-Here we collect in a dictionary the rack configuration as we want them to be saved in the data file. Some of them can be further customize, for example 
-with 'dac' names or amplification factor. 
+Here we collect in a dictionary the rack configuration as we want them to be saved in the data file. 
+Some of them can be further customize, for example with 'dac' names or amplification factor. 
 
 GENERAL RULES:
 
@@ -88,6 +88,8 @@ lockin_bias_dV_to_dI = r'dIb: lockin signal output (+V) On Range 1V Offset 0V fr
 lockin_measure_dV = r'dVm: M2b (see Vm) _ M0a 1kHz Out1 _ lockin signal input +V Range 3 Scaling 1V/V AC _ Low-Pass F. order 8 TC {}s.'
 lockin_measure_dI = r'dIm: M1h (see Im) _  M0a 1kHz Out2 _ lockin signal input +V (Range 3 Scaling 1V/V AC) _ Low-Pass F. order 8 TC {}s.'
 
+magfield = r'Magnetic field source and such CHANGE THIS'
+
 rack = {
     
     'V': V_ivvi_config,
@@ -111,8 +113,9 @@ rack = {
     'dIb': lockin_bias_dV_to_dI,
     
     'dVm': lockin_measure_dV,
-    'dIm': lockin_measure_dI
+    'dIm': lockin_measure_dI,
     
+    'B': magfield
 }
 
 G_source_line = lambda  rack_config, s_or_b, dac, amplification, c: rack_config.format( s_or_b, dac, amplification ) + '\n\t\tp = {}'.format( c )
@@ -126,6 +129,7 @@ Im_line = lambda rack_config, MV_over_A, c4, c2 :  rack_config.format( MV_over_A
 lockin_measure_line = lambda rack_config, tc: rack_config.format( tc )
 lockin_source_line = lambda rack_config, frequency: rack_config.format( frequency )
 
+magfield_line = lambda rack_config
 #----------------------------------------------------------------------------------------------------------------------------------------
 #----------------------------------------------------------------------------------------------------------------------------------------
 #----------------------------------------------------------------------------------------------------------------------------------------
