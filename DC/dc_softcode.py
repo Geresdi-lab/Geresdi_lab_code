@@ -129,7 +129,7 @@ Im_line = lambda rack_config, MV_over_A, c4, c2 :  rack_config.format( MV_over_A
 lockin_measure_line = lambda rack_config, tc: rack_config.format( tc )
 lockin_source_line = lambda rack_config, frequency: rack_config.format( frequency )
 
-magfield_line = lambda rack_config
+magfield_line = lambda rack_config, m: rack.config.format(m)
 #----------------------------------------------------------------------------------------------------------------------------------------
 #----------------------------------------------------------------------------------------------------------------------------------------
 #----------------------------------------------------------------------------------------------------------------------------------------
@@ -484,7 +484,12 @@ can be put in any order. However they will be automatically orderes in a way tha
     
 
 class SetUp:
-    
+    '''
+    The setup of a data file
+    First input:
+    softcode.device type
+    gate source, voltage source, measure current, measure voltage , ...
+    '''
     def __init__( self, device, *args ):
         
         self.device = device
@@ -567,14 +572,10 @@ def NumberExists( path: str,
 
 #It checks if the Meas_ number already exists.
 
-    datafilelist = glob.glob( path + '/*' + '.txt' )
-    
+    datafilelist = glob.glob(path + '/*' + '.txt')
     for j in datafilelist:
-
-        if ( float( j.split('_')[ -1 ][ : - 4 ] ) == number ):
-              
+        if float(j.split('_')[-1][:-4]) == number:
             return True
-    
     return False
 
 #
@@ -585,16 +586,11 @@ def SetMeasNumber(
                     path: str
                 ):
 #It looks for the max Meas_ number in the path and return tha numebr +1 
-        
-    datafilelist = glob.glob( path + '/*' + '.txt' )
-    
-    if len( datafilelist ) == 0:
-        
+    datafilelist = glob.glob(path + '/*' + '.txt')
+    if len(datafilelist) == 0:
         return 0
-    
-    numbers = [ float( j.split('_')[ -1 ][ : - 4 ] ) for j in datafilelist ]
-
-    return int ( max( numbers ) + 1 )
+    numbers = [float(j.split('_')[-1][:-4]) for j in datafilelist]
+    return int(max(numbers) + 1)
 
 #
 #----------------------------------------------------------------------------------------------------------------------------------------
@@ -610,7 +606,7 @@ def CreateFilePath(filename: str, filefolder: str, filepath: str, number=False):
     
     path = os.path.join(filepath, filefolder)
     pathlib.Path(path).mkdir(parents=True, exist_ok=True)
-    
+
     if not number:
         meas_number = SetMeasNumber(path)
     else:
@@ -627,24 +623,27 @@ def CreateFilePath(filename: str, filefolder: str, filepath: str, number=False):
                     print("Invalid input. Please enter 'y' or 'n'.")
         else:
             meas_number = number
-        
+
     newpath = os.path.join(path, f"{filename}_Meas_{meas_number}.txt")
-    
+
+    # Check if the previous Meas_ file exists
     if NumberExists(path, meas_number - 1):
-        try:
-            check = qt.DatFile(os.path.join(path, f"{filename}_Meas_{meas_number - 1}.txt"))
-            if len(check.df[check.df.columns[0]]) == 0:
-                while True:
-                    flag = input(f"Meas_{meas_number - 1} has no data. Do you want to overwrite? (y/n)\n")
-                    if flag == 'y':
-                        return os.path.join(path, f"{filename}_Meas_{meas_number - 1}.txt")
-                    elif flag == 'n':
-                        return newpath
-                    else:
-                        print("Invalid input. Please enter 'y' or 'n'.")
-        except Exception as e:
-            print(f"Error checking file {filename}_Meas_{meas_number - 1}: {e}")
-    
+        previous_file_path = os.path.join(path, f"{filename}_Meas_{meas_number - 1}.txt")
+        if os.path.exists(previous_file_path):  # Ensure the previous file exists
+            try:
+                check = qt.DatFile(previous_file_path)
+                if len(check.df[check.df.columns[0]]) == 0:
+                    while True:
+                        flag = input(f"Meas_{meas_number - 1} has no data. Do you want to overwrite? (y/n)\n")
+                        if flag == 'y':
+                            return previous_file_path
+                        elif flag == 'n':
+                            return newpath
+                        else:
+                            print("Invalid input. Please enter 'y' or 'n'.")
+            except Exception as e:
+                print(f"Error checking file {previous_file_path}: {e}")
+
     return newpath
                 
 #

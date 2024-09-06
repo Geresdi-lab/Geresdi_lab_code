@@ -278,11 +278,12 @@ class Station:
 
         Parameters:.
         - dac_index: The index of the DAC whose voltage needs to be ramped.
-        - target_voltage: The target voltage to ramp the DAC to.(in mV)
-        - ramp_speed_mV_per_s: The desired ramp speed in millivolts per second.
+        - target_voltage: The target voltage to ramp the DAC to (in mV). 
+                          The amplification will happen on this voltage! (e.g. TV 1V, amp 5x -> goes to 5V)
+        - ramp_speed_mV_per_s: The desired ramp speed in millivolts per second. (actual ramp speed you want to have)
         - max_polarity : the polarity you set (= abs(polarity), 2 for bipolar, 4 for unipolar)
         - sleep_time: The duration to sleep between each iteration in seconds (default is 0.5s).
-        - amplifier_factor: The amplification factor of the system (default is 1).
+        - amplifier_factor: The amplification factor of the system (default is 1 mV/V)
 
         Example usage:
         ramp_gate( 4, 10, 5, 0.5, 2)
@@ -1086,8 +1087,10 @@ class Station:
         measure 4 point with parameter sweep
         file_path = file path
         s = the voltage/ current source you use
-        m_s = measure of source voltage/current (same as applied)
+        m_s = measure of source current or voltage 
+              !! Order has to be same as in setup!!
         m_m = measure of what is not applied
+              !! Order has to be same as in setup!!
         t_sleep = time to sleep after each measurement
         gate_voltage = gate voltage to include in the data (default is None)
         magnetic_field = magnetic field values to include in the data as a tuple of three floats (Bx, By, Bz) (default is None)

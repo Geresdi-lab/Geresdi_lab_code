@@ -290,7 +290,6 @@ class Source:
 class Measure:
     
     def __init__( self, rack, kV_or_MV_per_V_or_A, unit = 'V', c4 = '', c2 = '' ):
-        
         self.rack0 = rack
         self.kV_or_MV_per_V_or_A = kV_or_MV_per_V_or_A 
         self.unit = unit
@@ -310,7 +309,7 @@ class Measure:
                 
                 additional_amplification = 100
                 
-            do_times = 1/( self.kV_or_MV_per_V_or_A*additional_amplification*1e6 )
+            do_times = -1/( self.kV_or_MV_per_V_or_A*additional_amplification*1e6 )
         
         if self.name[ 0 ] == 'V':
             
