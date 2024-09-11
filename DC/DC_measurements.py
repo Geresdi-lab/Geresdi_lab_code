@@ -1,846 +1,1302 @@
-''' DC_M_softcode_v0.py contains functions and classes that can be used to improve DC measurement on 'Ask' 
-It is called 'softcode' because it is not meant to control the actual measurement, but to collect all the info we need for that and pass them to the 'hardcode'.
-GENERAL RULES:
-
-1) New functions/classes have to be written following a readable spacing/naming strategy...
-2) If New funcitons/classis are added or major changes are implemented a new version '..._vx.py' has to be created because we should somehow keep track of the scripts
-we used
-...
-
-'''
-
-#----------------------------------------------------------------------------------------------------------------------------------------
-#----------------------------------------------------------------------------------------------------------------------------------------
-#----------------------------------------------------------------------------------------------------------------------------------------
-''' Here we just import all we basics libraries '''
-
-import os
-import csv
-import glob
-import re
+import numbers
+import Geresdi_lab_code.DC.dc_setup as DC_setup
+import qcodes.instrument_drivers
+import zhinst.qcodes.driver
+from multimethod import multimethod
+import datetime
 from time import sleep
-import pathlib
-import matplotlib.pyplot as plt
-from matplotlib.pyplot import figure
-import matplotlib.patches as mpatches
-import pandas as pd
 import numpy as np
-import math as math
-import lmfit
-from lmfit import Model, Parameter, report_fit
-import pyvisa
-from pandas import Series
-import scipy
-from scipy.interpolate import interp1d
-from scipy.fft import fft, fftfreq
-from scipy.signal import blackman
-from scipy import interpolate
-
-import copy 
-from scipy.signal import find_peaks
-import statistics
-from tabulate import tabulate
-from scipy.signal import lfilter
-
-from matplotlib import cm
-from matplotlib.ticker import LinearLocator
-import Class_Vitto.qtplot_data_Vitto as qt
-from Class_Vitto.qtplot_data_Vitto import *
-
-#----------------------------------------------------------------------------------------------------------------------------------------
-#----------------------------------------------------------------------------------------------------------------------------------------
-#----------------------------------------------------------------------------------------------------------------------------------------
-''' Here we collect in a dictionary the rack configuration info as we want them to be saved in the data file. Some of them can be further customize, for example 
-with 'dac' names or amplification factor. 
-
-GENERAL RULES:
-
-1)
-2)
-...
-
+import warnings
+from typing import Union, Tuple
+import os
 '''
-#----------------------------------------------------------------------------------------------------------------------------------------
+Future possible additions:
+include maximum sweeping speed
+'''
 
-V_ivvi_config = r'V{}: {} _ S3b {}mV/V.'            
-I_ivvi_config = r'I{}: {} _ IVd {}nA/V on.'
-Gx1_ivvi_config = r'G{}: {} _ 1V/V.'
-Gx5_ivvi_config = r'G{}: {} _ S1f 5V/V.'
-Gx30_ivvi_config = r'G{}: {} _ GATE DRIVE 30V/V.'
-
-Vm_ivvi_config_dc = r'Vm: M2b 100V/V dc _ M0a 1kHz Out1 _ Keithley 101.'
-Vm_ivvi_config_ac = r'Vm: M2b 100V/V dc + ac {}kV/V_ M0a 1kHz Out1 _ Keithley 101.'
-
-Im_ivvi_config_ln = r'Im: M1h Low Noise x1 {}MV/A on _ M0a 1kHz Out2 _ Keithley 102.'  
-Im_ivvi_config_ln_x100dc = r'Im: M1h Low Noise x100dc {}MV/A on _ M0a 1kHz Out2 _ Keithley 102.' 
-Im_ivvi_config_ln_x100ac = r'Im: M1h Low Noise x100ac {}MV/A on _ M0a 1kHz Out2 _ Keithley 102.' 
-
-
-Im_ivvi_config_lrin = r'Im: M1h Low Rin x1 {}MV/A on _ M0a 1kHz Out2 _ Keithley 102.'  
-Im_ivvi_config_lrin_x100dc = r'Im: M1h Low Rin x100dc {}MV/A on _ M0a 1kHz Out2 _ Keithley 102.' 
-Im_ivvi_config_lrin_x100ac = r'Im: M1h Low Rin x100ac {}MV/A on _ M0a 1kHz Out2 _ Keithley 102.' 
-
-
-lockin_bias_dV_to_dV = r'dVb: lockin signal output (+V) On Range 1V Offset 0V frequency {}Hz _ S0a In1 1kHz 10mV/V _ S3b (see Vs or Vb).'
-lockin_bias_dV_to_dI = r'dIb: lockin signal output (+V) On Range 1V Offset 0V frequency {}Hz _ S0a In1 1kHz 10mV/V _ IVd (see Is or Ib).'
-
-lockin_measure_dV = r'dVm: M2b (see Vm) _ M0a 1kHz Out1 _ lockin signal input +V Range 3 Scaling 1V/V AC _ Low-Pass F. order 8 TC {}ms.'
-lockin_measure_dI = r'dIm: M1h (see Im) _  M0a 1kHz Out2 _ lockin signal input +V (Range 3 Scaling 1V/V AC) _ Low-Pass F. order 8 TC {}ms.'
-
-rack = {
-    
-    'V': V_ivvi_config,
-    'I': I_ivvi_config,
-    'Gx1': Gx1_ivvi_config,
-    'Gx5': Gx5_ivvi_config,
-    'Gx30': Gx30_ivvi_config,
-    
-    'Vm_dc': Vm_ivvi_config_dc,
-    'Vm_ac': Vm_ivvi_config_ac,    
-    
-    'Im_ln': Im_ivvi_config_ln,
-    'Im_ln_100dc': Im_ivvi_config_ln_x100dc,
-    'Im_ln_100ac': Im_ivvi_config_ln_x100ac,
-    
-    'Im_lrin': Im_ivvi_config_lrin,
-    'Im_lrin_100dc': Im_ivvi_config_lrin_x100dc,
-    'Im_lrin_100ac': Im_ivvi_config_lrin_x100ac,
-    
-    'dVb': lockin_bias_dV_to_dV,
-    'dIb': lockin_bias_dV_to_dI,
-    
-    'dVm': lockin_measure_dV,
-    'dIm': lockin_measure_dI
-    
-}
-
-G_source_line = lambda  rack_config, s_or_b, dac, c: rack_config.format( s_or_b, dac ) + '\n\t\tp = {}'.format( c )
-
-source_line = lambda  rack_config, s_or_b, dac, mV_or_nA_per_V, c4, c2 : rack_config.format( s_or_b, dac, mV_or_nA_per_V ) + '\n\t\tp4 = {}\n\t\tp2 = {}'.format( c4, c2 )
-measure_line = lambda rack_config, kV_or_MV_per_V_or_A, c4, c2 : rack_config.format( kV_or_MV_per_V_or_A ) + '\n\t\tp4 = {}\n\t\tp2 = {}'.format( c4, c2 )  
-
-Vm_line = lambda rack_config, kV_over_V_ac, c4, c2 : rack_config.format( kV_over_V_ac ) + '\n\t\tp4 = {}\n\t\tp2 = {}'.format( c4, c2 )  
-Im_line = lambda rack_config, MV_over_A, c4, c2 :  rack_config.format( MV_over_A ) + '\n\t\tp4 = {}\n\t\tp2 = {}'.format( c4, c2 ) 
-
-lockin_measure_line = lambda rack_config, tc: rack_config.format( tc )
-lockin_source_line = lambda rack_config, frequency: rack_config.format( frequency )
-
-#----------------------------------------------------------------------------------------------------------------------------------------
-#----------------------------------------------------------------------------------------------------------------------------------------
-#----------------------------------------------------------------------------------------------------------------------------------------
+class Station:
+    def __init__( self, ivvi = '', k1 = '', k2 = '', lockin = '', lake = '', mag_x = '', mag_y = '', mag_z = '', k3 = '' ):
+        self.ivvi = ivvi
+        self.k1 = k1
+        self.k2 = k2
+        self.k3 = k3
+        self.lockin = lockin
+        self.lake = lake
+        self.mag_x = mag_x
+        self.mag_y = mag_y
+        self.mag_z = mag_z
+        self.figure = False
+        self.fig = ''
+        self.pcolor = 'bo'  
 
 
-''' Below we difine some classes that help us collecting the info of our setup and what kind of measurement we want.
-We have Device, Gate, Source, Measure, Lock_IN and Lock_OUT. At some point we need to add Magnet and Temperature.'''
+    def InsertText(
+                    self,
+                    text: str,
+                    filepath: str ):
+        '''
+        At the given file path in inserts the text at the beginning of the file
+        '''
+        with open( filepath, 'r+') as file:
+            content = file.read()
+            file.seek(0, 0)
+            file.write( text + content )
 
-        
-#----------------------------------------------------------------------------------------------------------------------------------------
-#----------------------------------------------------------------------------------------------------------------------------------------
-#----------------------------------------------------------------------------------------------------------------------------------------        
-        
-class Gate:
-    
-    def __init__( self, rack, dac, sweep_or_bias, sweep_back = False, mV_per_s = 50, unit = 'mV', c1 = '' ):
-        
-        self.rack0 = rack
-        self.dac = dac
-        self.c1 = c1        
-        self.V_per_V = int( self.line.split('V/V')[ 0 ].split( ' ' )[-1] )
-        self.sweep_or_bias = sweep_or_bias
-        self.sweep_back = sweep_back
-        self.mV_per_s = mV_per_s
-        self.unit = unit
-
-        
-    
-    @property
-    def name( self ):
-            
-            try: 
-            
-                len( self.sweep_or_bias )
-                return 'Gs'
-            
-            except: return 'Gb'       
-    
-    @property
-    def sweep( self ):
-        
-        if self.sweep_back and self.name[ -1 ] == 's':
-            
-            return np.concatenate( [ self.sweep_or_bias, self.sweep_or_bias[ ::-1 ] ] )
-        
-        return self.sweep_or_bias
-        
-    @property
-    def column( self ):
-        
-        try: size = len( self.sweep_or_bias )
-        except: size = 1
-        
-        do_times = self.V_per_V*1e-3
-        
-        return '\n\tname: {}\n\tdo_times: {}\n\tsize: {}\n\ttype: coordinate\n'.format( self.name, do_times, size )
-    
-    @property
-    def line( self ):
-        
-        return G_source_line( self.rack0, self.name[ 1 ], self.dac, self.c1 )    
-    
-    @property
-    def dacn( self ):
-        
-        return ReadDacNumber( self.dac )
-    
-    def update_c( self, c1 ):
-        
-        self.c1 = c1  
-        
-    def update_sweep_or_bias( self, sweep_or_bias, sweep_back = False ):
-        
-        self.sweep_or_bias = sweep_or_bias
-        self.sweep_back = sweep_back
-
-    def check( self ):
-        
-        print( self.line )
-        print('--------------------')
-        print( '\tCOLUMN:' + self.column )
-            
-#----------------------------------------------------------------------------------------------------------------------------------------    
-        
-class Source:
-    
-    def __init__( self, rack, dac, mV_or_nA_per_V, sweep_or_bias, sweep_back = False, mV_per_s = False, unit = 'mV', c4 = '', c2 = '' ):
-        
-        self.rack0 = rack
-        self.dac = dac
-        self.sweep_or_bias = sweep_or_bias
-        self.mV_or_nA_per_V = mV_or_nA_per_V
-        self.sweep_back = sweep_back
-        self.mV_per_s = mV_per_s
-        self.unit = unit
-        self.c4 = c4
-        self.c2 = c2
-
-    
-    @property
-    def name( self ):
-            
-            try: 
-            
-                len( self.sweep_or_bias )
-                return self.rack0.split( ':' )[ 0 ].format( 's')
-            
-            except: return self.rack0.split( ':' )[ 0 ].format( 'b')       
-    
-    @property
-    def sweep( self ):
-        
-        if self.sweep_back and self.name[ -1 ] == 's':
-            
-            return np.concatenate( [ self.sweep_or_bias, self.sweep_or_bias[ ::-1 ] ] )
-        
-        return self.sweep_or_bias
-        
-    @property
-    def column( self ):
-        
-        try: size = len( self.sweep_or_bias )
-        except: size = 1
-        
-        if self.name[ 0 ] == 'I':
-                
-            do_times = 1e-3/self.mV_or_nA_per_V
-        
-        if self.name[ 0 ] == 'V':
-            
-            do_times = 1e-3*self.mV_or_nA_per_V
-        
-        return '\n\tname: {}\n\tdo_times: {}\n\tsize: {}\n\ttype: coordinate\n'.format( self.name, do_times, size )
-    
-    @property
-    def line( self ):
-        
-        return source_line( self.rack0, self.name[ 1 ], self.dac, self.mV_or_nA_per_V, self.c4, self.c2 )    
-    
-    @property
-    def dacn( self ):
-        
-        return ReadDacNumber( self.dac )
-
-    def update_c( self, c4, c2 ):
-        
-        self.c4 = c4
-        self.c2 = c2
-        
-    def update_sweep_or_bias( self, sweep_or_bias, sweep_back = False ):
-        
-        self.sweep_or_bias = sweep_or_bias
-        self.sweep_back = sweep_back
-                
-    def check( self ):
-        
-        print( self.line )
-        print('--------------------')
-        print( '\tCOLUMN:' + self.column )
-        
-#----------------------------------------------------------------------------------------------------------------------------------------   
-        
-class Measure:
-    
-    def __init__( self, rack, kV_or_MV_per_V_or_A, unit = 'V', c4 = '', c2 = '' ):
-        self.rack0 = rack
-        self.kV_or_MV_per_V_or_A = kV_or_MV_per_V_or_A 
-        self.unit = unit
-        self.c4 = c4
-        self.c2 = c2
-        self.name = self.rack0.split( ':' )[ 0 ]
-    
-    @property
-    def column( self ):
-        
-        
-        if self.name[ 0 ] == 'I':
-            
-            additional_amplification = 1
-            
-            if len( self.rack0.split( 'dc' ) ) == 2:
-                
-                additional_amplification = 100
-                
-            do_times = -1/( self.kV_or_MV_per_V_or_A*additional_amplification*1e6 )
-        
-        if self.name[ 0 ] == 'V':
-            
-            do_times = 1/100
-        
-        return '\n\tname: {}\n\tdo_times: {}\n\ttype: value\n'.format( self.name, do_times )
-    
-    @property
-    def line( self ):
-        
-        return measure_line( self.rack0, self.kV_or_MV_per_V_or_A, self.c4, self.c2 )  
-    
-    @property
-    def keithley( self ):
-        
-        if '101' in self.line:
-            
-            return 'k101'
-        
-        if '102' in self.line:
-            
-            return 'k102'
-        
-        if '103' in self.line:
-            
-            return 'k103'
-        
-
-    def update_c( self, c4, c2 ):
-        
-        self.c4 = c4
-        self.c2 = c2
-        
-    def check( self ):
-        
-        print( self.line )
-        print('--------------------')
-        print( '\tCOLUMN:' + self.column )
-        
-#----------------------------------------------------------------------------------------------------------------------------------------     
-        
-class Lock_OUT:
-    
-    def __init__( self, rack, VI_rack_conversion, signal, frequency, unit = 'Vpk' ):
-        
-        self.rack0 = rack
-        self.VI_rack_conversion = VI_rack_conversion
-        self.name = self.rack0.split( ':' )[ 0 ]
-        self.signal = signal 
-        self.frequency = frequency
-        self.unit = unit
-        self.lockin = 'lockin'
-    
-    @property
-    def column( self ):
-            
-        do_times = ( 1/100 )*( 1/np.sqrt( 2 ) )*self.VI_rack_conversion
+    def open_figure( self ):
                
-        return '\n\tname: {}\n\tdo_times: {}\n\tsize: {}\n\ttype: coordinate\n'.format( self.name, do_times, 1 )
-    
-    @property
-    def line( self ):
+        self.figure = True
+        self.c_idx = 0
         
-        return lockin_source_line( self.rack0, self.frequency )          
-     
-    def update_amplitude( self, amplidute ):
+        plt.close()
+        fig = plt.figure()
+        fig.clf()
         
-        self.signal = amplidute 
-        
-    def update_frequency( self, frequency ):
-        
-        self.frequency = frequency 
-    
-    def check( self ):
-        
-        print( self.line )
-        print('--------------------')
-        print( '\tCOLUMN:' + self.column )
-        
-#----------------------------------------------------------------------------------------------------------------------------------------
-        
-class Lock_IN:
-    
-    def __init__( self, rack, ac_amplification, tc, unit = 'V' ):
-        
-        self.rack0 = rack
-        self.ac_amplification = ac_amplification 
-        self.unit = unit
-        self.tc = tc
-        self.name = self.rack0.split( ':' )[ 0 ]
-        self.lockin = 'lockin'
-    
-    @property
-    def column( self ):
-                     
-        do_times = 1/self.ac_amplification
-        
-        column_re = '\n\tname: {}\n\tdo_times: {}\n\ttype: value\n'.format( self.name + '_re', do_times )
-        column_im = '\n\tname: {}\n\tdo_times: {}\n\ttype: value\n'.format( self.name + '_im', do_times )
-        
-        return column_re, column_im
-    
-    @property
-    def line( self ):
-        
-        return lockin_measure_line( self.rack0, self.tc )   
-    
-    def update_tc( self, tv ):
-        
-        self.tc = tc 
-        
-    def check( self ):
-        
-        print( self.line )
-        print('--------------------')
-        print( '\tCOLUMNs:' + self.column[ 0 ] + self.column[ 1 ] )
+        self.fig = fig
 
-#----------------------------------------------------------------------------------------------------------------------------------------
+#----------------------------------------------------------------------------------------------------------------------------------------        
+    def draw_figure(
+                    self,
+                    x,
+                    y,
+                    x_l: str,
+                    y_l: str,
+                    ):
+               
+        plt.plot( x, y, self.pcolor, markersize = 4 )
+        plt.xlabel( x_l )
+        plt.ylabel( y_l )
+        plt.tight_layout()
+        plt.ticklabel_format( scilimits=(-3, 4) )
+        self.fig.canvas.draw()
 
-class Device:
+#----------------------------------------------------------------------------------------------------------------------------------------        
+                
+    def draw_figure_y1y2(
+                        self,
+                        x,
+                        y1,
+                        y2,
+                        x_l: str,
+                        y1_l: str,
+                        y2_l: str,
+                    ):
+               
+        
+        self.fig.set_size_inches( 8, 3 )
+        plt.subplot( 1, 2, 1 )
+        plt.xlabel( x_l )
+        plt.ylabel( y1_l )
+        plt.plot(x, y1, self.pcolor, markersize = 4 )
+        plt.tight_layout()
+        plt.ticklabel_format( scilimits=(-3, 4) )
+
+        plt.subplot( 1, 2, 2 ) 
+        plt.xlabel( x_l )
+        plt.ylabel( y2_l )  
+        plt.plot(x, y2, self.pcolor, markersize = 4 )
+        plt.tight_layout()
+        plt.ticklabel_format( scilimits=(-3, 4) )
+        
+        self.fig.canvas.draw()
     
-    def __init__( self, name, config, comments = '' ):
-        
-        self.name = name
-        self.config = config
-        self.comments = comments
-        
-    def update( self, config ):
-        
-        self.config = config 
-
-#----------------------------------------------------------------------------------------------------------------------------------------
-#----------------------------------------------------------------------------------------------------------------------------------------
-#----------------------------------------------------------------------------------------------------------------------------------------
-''' Below we create a SetUp class wchich contains all the info abount the device we are measuring, the tools we are using and the 
-rack configuration. 
-
-NOTE: It is important to respect the position of the setup.device attribute when creating the SetUp. the rest of the tools (Sources, Gates, MEasures...)
-can be put in any order. However they will be automatically orderes in a way that is consistent with the rest of the code.
-
-'''
+#----------------------------------------------------------------------------------------------------------------------------------------   
+    def write_time( 
+                self,
+                file_path: str,
+                name: str,
+                time
+                ):
     
-
-class SetUp:
+        text = '#\t{}: {}\n'.format( name, time )
+        self.InsertText( text, file_path )
+          
+#----------------------------------------------------------------------------------------------------------------------------------------   
+    def start_time( 
+                self,
+                file_path: str
+                ):
     
-    def __init__( self, device, *args ):
+        t = datetime.datetime.now()
+        self.write_time( file_path, 'Start', t )
+#----------------------------------------------------------------------------------------------------------------------------------------   
+    def sweep_time( 
+                self,
+                file_path: str
+                ):
+    
+        t = datetime.datetime.now()
+        self.write_time( file_path, 'Sweep', t )        
+#----------------------------------------------------------------------------------------------------------------------------------------   
+    def end_time( 
+                self,
+                file_path: str
+                ):
+    
+        t = datetime.datetime.now()
+        self.write_time( file_path, 'End', t )       
+
+    def get_time_from_line(self, line):
+        """
+        Extracts the time from a line in the format,"#    #End: YYYY-MM-DD HH:MM:SS.ssssss"
+        handling delimiter lines.
+        """
+        if line.startswith("#\t") and (line.startswith("#\tStart") or line.startswith("#\tEnd")):
+            time_str = line.split(": ")[-1].strip()
+            return datetime.datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S.%f")
+        return None
+
+    def process_file(self, filename):
+        """
+        Processes the file to keep only the earliest start time and latest end time,
+        calculates the time difference, and writes it back to the same file.
+        """
+        # Read the file
+        with open(filename, 'r') as f:
+            lines = f.readlines()
+
+        # Initialize variables to store the earliest start time and latest end time
+        earliest_start_time = None
+        latest_end_time = None
+        other_lines = []
+
+        # Iterate over the lines to find the earliest start time and latest end time
+        for line in lines:
+            time = self.get_time_from_line(line)
+            if time:
+                if line.startswith("#\tStart"):
+                    if earliest_start_time is None or time < earliest_start_time:
+                        earliest_start_time = time
+                elif line.startswith("#\tEnd"):
+                    if latest_end_time is None or time > latest_end_time:
+                        latest_end_time = time
+            else:
+                other_lines.append(line)
+
+        # Calculate time difference
+        if earliest_start_time and latest_end_time:
+            time_diff = latest_end_time - earliest_start_time
+
+            # Format time difference
+            time_diff_str = str(time_diff)
+
+            # Prepare the result to be written back to the same file
+            result = [
+                f"#\tStart: {earliest_start_time}\n",
+                f"#\tEnd: {latest_end_time}\n",
+                f"#\tTime Difference: {time_diff_str}\n"
+            ]
+
+            # Write everything back to the same file
+            with open(filename, 'w') as f:
+                f.writelines(result + other_lines)
+
+
+#----------------------------------------------------------------------------------------------------------------------------------------    
+    def load_lake( self, lake ):
         
-        self.device = device
+        self.lake = lake
+#----------------------------------------------------------------------------------------------------------------------------------------        
+    def load_k3( self, k3 ):
         
-        self.sources = []
-        self.gates = []
-        self.measures = []
-        self.lock_in = []
-        self.lock_out = []
+        self.k3 = k3
+#----------------------------------------------------------------------------------------------------------------------------------------        
+    def load_mag( self, mag_x = '', mag_y = '', mag_z = '' ):
         
-        for i in [*args]:
+        self.mag_x = mag_x
+        self.mag_y = mag_y
+        self.mag_z = mag_z
+        
+#----------------------------------------------------------------------------------------------------------------------------------------    
+    def set_keithley(
+                self,
+                measure: DC_setup.Measure
+                ):
+        
+        if measure.keithley[ -1 ] == '1':
+            #print(self.k1)
+            return self.k1
+        
+        if measure.keithley[ -1 ] == '2':
             
-            if type( i ) == Source:
-                
-                self.sources.append( i )
-                
-            if type( i ) == Gate:
-                
-                self.gates.append( i )
-                
-            if type( i ) == Measure:
-                
-                self.measures.append( i )
-                
-            if type( i ) == Lock_IN: 
-                
-                self.lock_in.append( i )
-                
-            if type( i ) == Lock_OUT:
-                
-                self.lock_out.append( i )
+            return self.k2
         
-
-        self.tools = self.gates + self.sources + self.measures + self.lock_out + self.lock_in
-
+        if measure.keithley[ -1 ] == '3':
+            
+            return self.k3
 #----------------------------------------------------------------------------------------------------------------------------------------
-#----------------------------------------------------------------------------------------------------------------------------------------
-#----------------------------------------------------------------------------------------------------------------------------------------
-''' Below we collect all the functions we need. Mainly, they concern data file managment and how to write setup info in the the file header. 
-
-GENERAL RULES:
-
-1)
-2)
-...
-
-'''
-#----------------------------------------------------------------------------------------------------------------------------------------
-
-
-def InsertText( text: str,
-                filepath: str ):
-
-#At the given file path in inserts the text at the beginning of the file.
-    
-    with open( filepath, 'r+') as file:
-        content = file.read()
-        file.seek(0, 0)
-        file.write( text + content )  
-
-#
-#----------------------------------------------------------------------------------------------------------------------------------------
-#
-
-def ReadDacNumber( dac: str ):
-    
-#Returns the int number x of the dac form the scring 'dacx'
-    
-    n = int( dac[ 3:: ] )
-    
-    return n  
-
-#
-#----------------------------------------------------------------------------------------------------------------------------------------
-#
-
-def NumberExists( path: str,
-                  number: int
-                ):
-
-#It checks if the Meas_ number already exists.
-
-    datafilelist = glob.glob( path + '/*' + '.txt' )
-    
-    for j in datafilelist:
-
-        if ( float( j.split('_')[ -1 ][ : - 4 ] ) == number ):
-              
-            return True
-    
-    return False
-
-#
-#----------------------------------------------------------------------------------------------------------------------------------------
-#
-
-def SetMeasNumber( 
-                    path: str
-                ):
-#It looks for the max Meas_ number in the path and return tha numebr +1 
-        
-    datafilelist = glob.glob( path + '/*' + '.txt' )
-    
-    if len( datafilelist ) == 0:
-        
-        return 0
-    
-    numbers = [ float( j.split('_')[ -1 ][ : - 4 ] ) for j in datafilelist ]
-
-    return int ( max( numbers ) + 1 )
-
-#
-#----------------------------------------------------------------------------------------------------------------------------------------
-#
-
-def CreateFilePath( filename: str,
-                    filefolder: str,
-                    filepath: str,
-                    number = False
+    def set_lockin( 
+                    self,
+                    s: DC_setup.Lock_OUT,
+                    m: DC_setup.Lock_IN
                   ):
-
-# It looks on the given subfolder path and looks for the max Meas_ number in the folder and automatically gives a number = number + 1 file
-# if number = False. If the file with max Meas_ number has no data inside, it asks you if you want to overwrite that file without creating a new one.
-# You can decide to input the Meas_ number after the filepath so that the funciton will not give it automatically. However there if an interlock if that
-# number already exixts 
-
-   
-    path = os.path.join( filepath, filefolder )
-    pathlib.Path( path ).mkdir( parents = True, exist_ok = True )
+        
+        self.lockin.oscs[ 0 ].freq( s.frequency )
+        
+        self.lockin.demods[0].timeconstant( m.tc )
+        
+        self.lockin.sigouts[ 0 ].enables[ 0 ].value( 1 )
+        
+        self.lockin.sigouts[ 0 ].amplitudes[ 0 ].value( s.signal )
+        
+        self.lockin.sigouts[ 0 ].on( True )
+        
+        sleep( 1 )
+        
+        return self.lockin
     
-    if not number: 
+    def tc_freq_check(self,
+                       s: DC_setup.Lock_OUT, 
+                       m: DC_setup.Lock_IN
+                       ):
+        tc_value = self.lockin.demods[0].timeconstant(m.tc)
+        freq_value = 1 / (2 * np.pi * self.lockin.oscs[0].freq(s.frequency))
+    
+        if tc_value <= freq_value:
+        # Prompt the user for confirmation to continue or stop
+            while True:
+                check = input(f"Warning: Time constant {tc_value}s is less than or equal to the lowest value set by {1/(2*np.pi*freq_value)}s, with set frequency {freq_value}Hz.\nDo you want to continue? (yes/no): ").lower()
+                
+                if check == 'yes':
+                    print("Continuing with the process...")
+                    break  # Exit the loop and continue
+                elif check == 'no':
+                    raise ValueError(f"Process stopped. Time constant {tc_value} is less than or equal to the frequency limit {freq_value}.")
+                else:
+                    print("Please enter 'yes' or 'no'.") 
+    
+#----------------------------------------------------------------------------------------------------------------------------------------    
+    def voltage_change_per_iteration(self, 
+                                    ramp_speed_mV_per_s, 
+                                    sleep_time=0.5, 
+                                    amplifier_factor=1
+                                    ):
+        """
+        Calculate the voltage change per iteration based on ramp speed, sleep time,
+        and amplification factor.
+        Say you want a final ramp_speed in mV/s of 2 mV/s with amplifier 5:
+        voltage_change_per_iteration(5, 2, 5)
         
-         meas_number = SetMeasNumber( path )
+        # Example usage:
+        # voltage_change_per_iteration(5, 0.5, 1) -> 2.5 iteration speed (per sleep time this is howmuch you go up) 
+        # Calculates the voltage change per iteration for a ramp speed of 5 mV/s, sleep time of 0.5s, and amplification factor of 1
+        # To be used mainly in functions
+        """
+        return ramp_speed_mV_per_s * sleep_time / amplifier_factor
+    
+    def ramp_voltage(self, 
+                    dac_index, 
+                    target_voltage, 
+                    ramp_speed_mV_per_s, 
+                    max_polarity = 2, 
+                    sleep_time=0.5, 
+                    amplifier_factor=1, 
+                    silent = False, 
+                    warning = True):
+        """
+        Ramps the gate voltage of a DAC to a target voltage at a specified ramp speed.
+        For high ramp speeds (> 20) expect significant delays.
+
+        Parameters:.
+        - dac_index: The index of the DAC whose voltage needs to be ramped.
+        - target_voltage: The target voltage to ramp the DAC to (in mV). 
+                          The amplification will happen on this voltage! (e.g. TV 1V, amp 5x -> goes to 5V)
+        - ramp_speed_mV_per_s: The desired ramp speed in millivolts per second. (actual ramp speed you want to have)
+        - max_polarity : the polarity you set (= abs(polarity), 2 for bipolar, 4 for unipolar)
+        - sleep_time: The duration to sleep between each iteration in seconds (default is 0.5s).
+        - amplifier_factor: The amplification factor of the system (default is 1 mV/V)
+
+        Example usage:
+        ramp_gate( 4, 10, 5, 0.5, 2)
+        # Ramps the gate voltage of DAC 4 to 10 V at a speed of 5 mV/s with an amplification factor of 2
+        """
+        dac = f'dac{dac_index}'
+        if warning:
+            if ramp_speed_mV_per_s > 250:
+                warning_message = f"Warning: Ramp speed is above 250 mV/s ({ramp_speed_mV_per_s} mV/s)."
+                warnings.warn(warning_message)
+                response = input("To proceed, type 'OK': ")
+                if response.lower() != "ok":
+                    print('Reply was not ok: aborting')
+                    return  # Exit function if response is not 'OK'
         
-    else:
-        
-        if NumberExists( path, number ):
-        
-            print( "WARNING: File number already exist!\n" )
-        
-            YorN = False
-        
-            while  not YorN:        
+        current_voltage = self.ivvi.dac_voltages()[dac_index-1]  # Assuming dac_index is 1-based
+        #print(current_voltage)
+        min_step = max_polarity / (2**16)  # Smallest step in volts due to 16-bit resolution
+        min_voltage = min_step * amplifier_factor  # Minimum voltage considering the amplifier
+        voltage_change = self.voltage_change_per_iteration(ramp_speed_mV_per_s, sleep_time, amplifier_factor)
+
+        while abs(current_voltage - target_voltage) > min_voltage:
+            if current_voltage < target_voltage:
+                current_voltage += voltage_change
+                if current_voltage > target_voltage:
+                    current_voltage = target_voltage
+            else:
+                current_voltage -= voltage_change
+                if current_voltage < target_voltage:
+                    current_voltage = target_voltage
             
-                flag = input( 'Keep writing on the same file? (y/n)\n')
-            
-                if flag == 'y':
+            # Set DAC voltage using eval
+            self.ivvi.set(dac, current_voltage)
+            #eval(f'IVVI.dac{dac_index}({current_voltage})')
+            sleep(sleep_time)
+            #print(f'IVVI.dac{dac_index}({current_voltage})')
+
+        # Ensure final voltage is set to the target voltage using eval
+        self.ivvi.set(dac, target_voltage)
+        #eval(f'IVVI.dac{dac_index}({target_voltage})')
+        if not silent:
+            print(f'DAC{dac_index} is {self.ivvi.dac_voltages()[ dac_index - 1 ]} mV')
+
+    def ramp_voltage_to_zero(self, 
+                          dac_index,
+                          ramp_speed_mV_per_s,
+                          max_polarity = 2,
+                          sleep_time=0.5,
+                          amplifier_factor=1,
+                          silent = False,
+                          warning = True):
+        """
+        Ramps the gate voltage of a DAC to zero at a specified ramp speed.
+        For high ramp speeds (> 20) expect significant delays.
+        
+        Parameters:
+        - IVVI: The IVVI rack object.
+        - dac_index: The index of the DAC whose voltage needs to be ramped.
+        - ramp_speed_mV_per_s: The desired ramp speed in millivolts per second. (note: code is of course slightly slower, so this is a max bound)
+        - max_polarity : the polarity you set (= abs(polarity), 2 for bipolar, 4 for unipolar)
+        - sleep_time: The duration to sleep between each iteration in seconds (default is 0.5s).
+        - amplifier_factor: The amplification factor of the system (default is 1).
+
+        Example usage:
+        ramp_gate_to_zero(4, 5, 0.5, 1)
+        # Ramps the gate voltage of DAC 4 to near 0 at a speed of 5 mV/s with an amplification factor of 1
+        """
+        dac = f'dac{dac_index}'
+        if warning:
+            if ramp_speed_mV_per_s * amplifier_factor > 250:
+                warning_message = f"Warning: Ramp speed (inc. amplifier) is above 250 mV/s ({ramp_speed_mV_per_s*amplifier_factor} mV/s)."
+                warnings.warn(warning_message)
+                response = input("To proceed, type 'OK': ")
+                if response.lower() != "ok":
+                    print('Reply was not ok: aborting')
+                    return  # Exit function if response is not 'OK'
                     
-                    meas_number = number
-                    break
-            
-                if flag == 'n':
-                
-                    YorN == True
-                
-                    return -1992
-                
-        else: meas_number = number
-        
-    newpath = path + '\\' + filename + '_Meas_{}.txt'.format( meas_number )
-    
-    
-    if NumberExists( path, meas_number -1 ):
-        
-        
-        try: check = qt.DatFile( path + '\\' + filename + '_Meas_{}.txt'.format( meas_number - 1 ) )
-        except: 
-            print( 'WARNING! Something is wrong with the last saved file!\n')
-            return -1
-    
-        if len( check.df[ check.df.columns[ 0 ] ] ) == 0:
-            
-            YorN = False
-        
-            while  not YorN:        
-            
-                flag = input( r'_Meas_{} has no data. Do you want to overwrite? (y/n)'.format( meas_number - 1 ) + '\n' )
-            
-                if flag == 'y':
-                    
-                    return path + '\\' + filename + '_Meas_{}.txt'.format( meas_number - 1 )
-                    break
-            
-                if flag == 'n':
-    
-                    return newpath
-    
-    return newpath
-                
-#
-#----------------------------------------------------------------------------------------------------------------------------------------
-#
+        current_voltage = self.ivvi.dac_voltages()[dac_index-1]  # Assuming dac_index is 1-based
+        #print(current_voltage)
+        min_step = max_polarity / (2**16)  # Smallest step in volts due to 16-bit resolution
+        min_voltage = min_step * amplifier_factor  # Minimum voltage step considering the amplifier
+        voltage_change = self.voltage_change_per_iteration(ramp_speed_mV_per_s, sleep_time, amplifier_factor)
 
-def PutLine( 
-                filepath: str
-            ):
-    
-#Just write a sepaaretion line of -- in the comment part on the file to help reading. 
-
-    with open( filepath, 'a+') as f:
-
-        header = '\t-------------------------------------------------------------------------------'
-        np.savetxt( f, [], header = header, comments = '#' )
- 
-
-#
-#----------------------------------------------------------------------------------------------------------------------------------------
+        while abs(current_voltage) > min_voltage:
+            if current_voltage > 0:
+                current_voltage -= voltage_change
+                if current_voltage < min_voltage:
+                    current_voltage = min_voltage
+            else:
+                current_voltage += voltage_change
+                if current_voltage > -min_voltage:
+                    current_voltage = -min_voltage
+            
+            # Set DAC voltage
+            self.ivvi.set(dac, current_voltage)
+            #eval(f'IVVI.dac{dac_index}({current_voltage})')
+            sleep(sleep_time)
+            #print(f'IVVI.dac{dac_index}({current_voltage})')
+            
+        # Ensure final voltage is set to the target voltage using eval
+        self.ivvi.set(dac, 0)
+        if not silent:
+            print(f'DAC{dac_index} is {self.ivvi.dac_voltages()[ dac_index - 1 ]} mV')
 # 
+#----------------------------------------------------------------------------------------------------------------------------------------        
 
-def WriteInfo( 
-                  filepath: str,
-                  setup: SetUp
-              ):
-
-#This function write the info concerning the SetUp file.  
+#---------------------------------------------------------------------------------------------------------------------------------------- 
+#---------------------------------------------------------------------------------------------------------------------------------------- 
+#---------------------------------------------------------------------------------------------------------------------------------------- 
+#---------------------------------------------------------------------------------------------------------------------------------------- 
+#---------------------------------------------------------------------------------------------------------------------------------------- 
+  
+#---------------------------------------------------------------------------------------------------------------------------------------- 
     
-    if filepath == -1:
-        
-        return 'Error in the path!\n'
-
-    PutLine( filepath )
-    
-    error = WriteDeviceInfo( filepath, setup )
-    
-    if error != 0:
-
-        print( 'ERROR: WriteDeviceInfo gave error {}'.format( error ) )
-
-    PutLine( filepath )
-    
-    error = WriteSetUpInfo( filepath, setup )
-    
-    if error != 0:
-
-        print( 'ERROR: WriteDeviceInfo gave error {}'.format( error ) )    
-            
-    PutLine( filepath )
-    
-    error = WriteColumnInfo( filepath, setup )
-
-    if error != 0:
-
-        print( 'ERROR: WriteDeviceInfo gave error {}'.format( error ) )
-        
-    PutLine( filepath )
-    
-    error = WriteHeaderInfo( filepath, setup )
-    
-    if error != 0:
-
-        print( 'ERROR: WriteDeviceInfo gave error {}'.format( error ) )
-    
-#
-#----------------------------------------------------------------------------------------------------------------------------------------
-#
-
-def WriteDeviceInfo(
-                 filepath: str,
-                 setup: SetUp
+    def hidden_2p(
+                    self,
+                    path: str,
+                    dac: str,
+                    dac_n: int,
+                    keithley: qcodes.instrument_drivers.tektronix.Keithley_6500.Keithley_6500,
+                    sweep: list,
+                    s_sleep: float,
                 ):
-    
-#This function write the info concerning the Device in the SetUp. 
-    
-    try:
-        with open( filepath, 'w+') as f:
+
+        for s in sweep:
+
+            self.ivvi.set( dac, s )
+
+            sleep( s_sleep )
+
+            s_data = self.ivvi.dac_voltages()[ dac_n - 1 ]
+            m_data = keithley.amplitude()
+
+            if self.figure:
+
+                self.draw_figure( s_data, m_data, 'source', 'measure' )
+
+            data = np.column_stack( [ s_data, m_data ] )  
+            with open( path, 'a+' ) as f:
+
+                np.savetxt( f, data, delimiter = '\t' ) 
+                f.flush()              
+#----------------------------------------------------------------------------------------------------------------------------------------                 
+    def hidden_2p_lock(
+                            self,
+                            path: str,
+                            dac: str,
+                            dac_n: int,
+                            keithley: qcodes.instrument_drivers.tektronix.Keithley_6500.Keithley_6500,
+                            lockin: zhinst.qcodes.driver.devices.base.ZIBaseInstrument,
+                            sweep: list,
+                            s_sleep: float
+                            ):
+
+        for s in sweep:
+
+            self.ivvi.set( dac, s )
+
+            sleep( s_sleep )
+
+            s_data = self.ivvi.dac_voltages()[ dac_n - 1 ]
+            ds = lockin.sigouts[ 0 ].amplitudes[ 0 ].value()
+            m_data = keithley.amplitude()
+            dm_re = lockin.demods[ 0 ].sample()[ 'x' ][ 0 ]
+            dm_im = lockin.demods[ 0 ].sample()[ 'y' ][ 0 ] 
             
+            if self.figure:
+
+                self.draw_figure_y1y2( s_data, m_data, abs( complex( dm_re, dm_im ) )/ds , 'source', 'measure', 'dm/ds ' )
             
-            header = '\tDEVICE:'
-            np.savetxt( f, [], header = header, comments = '#' )
+            data = np.column_stack( [ s_data, m_data, ds, dm_re, dm_im ] )  
+            with open( path, 'a+' ) as f:
 
-        with open( filepath, 'a+') as f:
-
-            header = '\t' + setup.device.name
-            np.savetxt( f, [], header = header, comments = '#' )
-            header = '\t' + setup.device.config
-            np.savetxt( f, [], header = header, comments = '#' )
-            header = '\t' + setup.device.comments
-            np.savetxt( f, [], header = header, comments = '#' )
-            
-        return 0
-    
-    except: return -1992
-#  
-#----------------------------------------------------------------------------------------------------------------------------------------
-#
-
-def WriteSetUpInfo(
-                 filepath:str,
-                 setup: SetUp
-                ):
-    
-#This function write the info concerning rack configuration of the tools in the SetUp. 
-    
-    try:
-        with open( filepath, 'a+') as f:
-
-            header = '\tSETUP:'
-            np.savetxt( f, [], header = header, comments = '#' )
-
-        for i in setup.tools :
-
-            with open( filepath, 'a+') as f:
-
-                header = '\t' + i.line
-                np.savetxt( f, [], header = header, comments = '#' )
+                np.savetxt( f, data, delimiter = '\t' ) 
+                f.flush()                
+#---------------------------------------------------------------------------------------------------------------------------------------- 
+    def hidden_bias_2p(
+                    self,
+                    path: str,
+                    b_dac: str,
+                    b_dac_n: int,
+                    s_dac: str,
+                    s_dac_n: int,
+                    keithley: qcodes.instrument_drivers.tektronix.Keithley_6500.Keithley_6500,
+                    sweep: list,
+                    b_sleep: float,
+                    s_sleep: float,
+                    ):
         
-        return 0
-    
-    except: return -1992
-            
-#
-#----------------------------------------------------------------------------------------------------------------------------------------
-#
+        self.ivvi.set( b_dac, s )
+        
+        sleep( b_sleep )
+        
+        for s in sweep:
 
-def WriteColumnInfo(
-                     filepath:str,
-                     setup: SetUp
+            self.ivvi.set( s_dac, s )
+
+            sleep( s_sleep )
+
+            s_data = self.ivvi.dac_voltages()[ s_dac_n - 1 ]
+            b_data = self.ivvi.dac_voltages()[ b_dac_n - 1 ]
+            m_data = keithley.amplitude()
+
+            if self.figure:
+
+                self.draw_figure( s_data, m_data, 'source', 'measure' )
+
+            data = np.column_stack( [ b_data, s_data, m_data ] )  
+            with open( path, 'a+' ) as f:
+
+                np.savetxt( f, data, delimiter = '\t' ) 
+                f.flush()
+#---------------------------------------------------------------------------------------------------------------------------------------- 
+    def hidden_bias_2p_lock(
+                    self,
+                    path: str,
+                    b_dac: str,
+                    b_dac_n: int,
+                    s_dac: str,
+                    s_dac_n: int,
+                    keithley: qcodes.instrument_drivers.tektronix.Keithley_6500.Keithley_6500,
+                    lockin: zhinst.qcodes.driver.devices.base.ZIBaseInstrument,            
+                    sweep: list,
+                    b_sleep: float,
+                    s_sleep: float,
+                    ):
+        
+        self.ivvi.set( b_dac, s )
+        
+        sleep( b_sleep )
+        
+        for s in sweep:
+
+            self.ivvi.set( s_dac, s )
+
+            sleep( s_sleep )
+
+            s_data = self.ivvi.dac_voltages()[ s_dac_n - 1 ]
+            b_data = self.ivvi.dac_voltages()[ b_dac_n - 1 ]
+            ds = lockin.sigouts[ 0 ].amplitudes[ 0 ].value()
+            
+            m_data = keithley.amplitude()
+            dm_re = lockin.demods[ 0 ].sample()[ 'x' ][ 0 ]
+            dm_im = lockin.demods[ 0 ].sample()[ 'y' ][ 0 ] 
+            
+            if self.figure:
+
+                self.draw_figure_y1y2( s_data, m_data, abs( complex( dm_re, dm_im ) )/ds , 'source', 'measure', 'dm/ds ' )
+            
+            data = np.column_stack( [ b_data, s_data, m_data, ds, dm_re, dm_im ] )  
+            with open( path, 'a+' ) as f:
+
+                np.savetxt( f, data, delimiter = '\t' ) 
+                f.flush()
+#----------------------------------------------------------------------------------------------------------------------------------------                 
+    def hidden_4p(
+                    self,
+                    path: str,
+                    dac: str,
+                    dac_n: int,
+                    keithley1: qcodes.instrument_drivers.tektronix.Keithley_6500.Keithley_6500,
+                    keithley2: qcodes.instrument_drivers.tektronix.Keithley_6500.Keithley_6500,
+                    sweep: list,
+                    s_sleep: float,
+                    silent = True
+                    ):
+        '''
+        path: path
+        dac: used dac (source)
+        dacn: used dacn (source)
+        sweep: rangeo of sleep
+        s_sleep: after every point, how long you wait
+
+        KNOWN BUGS:
+        ---
+        Future possible additions:
+        include maximum sweeping speed
+        '''
+        for s in sweep:
+            if not silent and s == int(round(len(sweep))/2):
+                print(f'Halfway there: point {int(round(len(sweep))/2)}/{len(sweep)}')
+            self.ivvi.set( dac, s )
+
+            sleep( s_sleep )
+
+            s_data = self.ivvi.dac_voltages()[ dac_n - 1 ]
+            m1_data = keithley1.amplitude()
+            m2_data = keithley2.amplitude()
+
+            if self.figure:
+
+                self.draw_figure( m1_data, m2_data, 'source_m', 'measure' )
+
+            data = np.column_stack( [ s_data, m1_data, m2_data ] )  
+            with open( path, 'a+' ) as f:
+                np.savetxt( f, data, delimiter = '\t' ) 
+                f.flush()
+#----------------------------------------------------------------------------------------------------------------------------------------                 
+    def hidden_4p_lock(
+                    self,
+                    path: str,
+                    dac: str,
+                    dac_n: int,
+                    keithley1: qcodes.instrument_drivers.tektronix.Keithley_6500.Keithley_6500,
+                    keithley2: qcodes.instrument_drivers.tektronix.Keithley_6500.Keithley_6500,
+                    lockin: zhinst.qcodes.driver.devices.base.ZIBaseInstrument,
+                    sweep: list,
+                    s_sleep: float,
                     ):
 
-#This function write the column info of the file in a way that the qt analysis code can be used.
+        for s in sweep:
 
-    try:
-        
-        for i in range( 0, len( setup.tools ) ):
+            self.ivvi.set( dac, s )
 
-            with open( filepath, 'a+') as f:
+            sleep( s_sleep )
 
-                if type( setup.tools[ i ] ) == Lock_IN:
-
-                    header = '\tCOLUMN {}:'.format( i ) + setup.tools[ i ].column[ 0 ]
-                    np.savetxt( f, [], header = header, comments = '#' )
-                    header = '\tCOLUMN {}:'.format( i + 1 ) + setup.tools[ i ].column[ 1 ]
-                    np.savetxt( f, [], header = header, comments = '#' )
-                    continue
-
-                header = '\tCOLUMN {}:'.format( i ) + setup.tools[ i ].column
-                np.savetxt( f, [], header = header, comments = '#' )
-        
-        return 0
-    
-    except: return -1992
+            s_data = self.ivvi.dac_voltages()[ dac_n - 1 ]
+            ds = lockin.sigouts[ 0 ].amplitudes[ 0 ].value()
             
-#
-#----------------------------------------------------------------------------------------------------------------------------------------
-#
+            m1_data = keithley1.amplitude()
+            m2_data = keithley2.amplitude()
+            dm_re = lockin.demods[ 0 ].sample()[ 'x' ][ 0 ]
+            dm_im = lockin.demods[ 0 ].sample()[ 'y' ][ 0 ] 
 
-def WriteHeaderInfo(
-                     filepath:str,
-                     setup: SetUp
+            if self.figure:
+
+                self.draw_figure_y1y2( m1_data, m2_data, abs( complex( dm_re, dm_im ) )/ds,'source_m', 'measure', 'dm/ds' )
+
+            data = np.column_stack( [ s_data, m1_data, m2_data, ds, dm_re, dm_im ] )  
+            with open( path, 'a+' ) as f:
+
+                np.savetxt( f, data, delimiter = '\t' ) 
+                f.flush() 
+#----------------------------------------------------------------------------------------------------------------------------------------                 
+    def hidden_bias_4p(
+                    self,
+                    path: str,
+                    b_dac: str,
+                    b_dac_n: int,
+                    s_dac: str,
+                    s_dac_n: int,
+                    keithley1: qcodes.instrument_drivers.tektronix.Keithley_6500.Keithley_6500,
+                    keithley2: qcodes.instrument_drivers.tektronix.Keithley_6500.Keithley_6500,
+                    sweep: list,
+                    b_sleep: float,
+                    s_sleep: float,
                     ):
-    
-# This function write the header of the file, i.e. the name of the columns and their units as they are saved 
-    
-    column_names, units = [], []
-    
-    try:
         
-        for i in range( 0, len( setup.tools ) ):
+        self.ivvi.set( b_dac, s )
+        
+        sleep( b_sleep )
+        
+        for s in sweep:
 
-            if type( setup.tools[ i ] ) == Lock_IN:
+            self.ivvi.set( s_dac, s )
 
-                column_names.append( setup.tools[ i ].name + '_re'  )
-                units.append( setup.tools[ i ].unit )
-                column_names.append( setup.tools[ i ].name + '_im'  )
-                units.append( setup.tools[ i ].unit )
-                continue
+            sleep( s_sleep )
 
-            column_names.append( setup.tools[ i ].name  )
-            units.append( setup.tools[ i ].unit )
+            s_data = self.ivvi.dac_voltages()[ s_dac_n - 1 ]
+            b_data = self.ivvi.dac_voltages()[ b_dac_n - 1 ]
+            m1_data = keithley1.amplitude()
+            m2_data = keithley2.amplitude()
 
-        with open( filepath, 'a+') as f:
+            if self.figure:
 
-            header = "\t" + ','.join( [ str( elem ) + "\t" for elem in column_names ] )
-            np.savetxt(f, [], header = header, comments = '#' )
-            header = "\t" + ','.join( [ str( elem ) + '\t' for elem in units ] )+'\n'
-            np.savetxt(f, [], header = header, comments = '#' )
+                self.draw_figure( m1_data, m2_data, 'source_m', 'measure' )
 
-        return 0
-    
-    except: return -1992
+            data = np.column_stack( [ b_data, s_data, m1_data, m2_data ] )  
+            with open( path, 'a+' ) as f:
 
-#----------------------------------------------------------------------------------------------------------------------------------------
-#----------------------------------------------------------------------------------------------------------------------------------------
-#----------------------------------------------------------------------------------------------------------------------------------------
-'''  -------------------------------- THIS IS THE END ------------------------------------ '''
-#----------------------------------------------------------------------------------------------------------------------------------------
-#----------------------------------------------------------------------------------------------------------------------------------------
-#----------------------------------------------------------------------------------------------------------------------------------------
-print( 'DC_M_softcode_v0.py lib imported!' )
+                np.savetxt( f, data, delimiter = '\t' ) 
+                f.flush()
+#----------------------------------------------------------------------------------------------------------------------------------------                 
+    def hidden_bias_4p_lock(
+                    self,
+                    path: str,
+                    b_dac: str,
+                    b_dac_n: int,
+                    s_dac: str,
+                    s_dac_n: int,
+                    keithley1: qcodes.instrument_drivers.tektronix.Keithley_6500.Keithley_6500,
+                    keithley2: qcodes.instrument_drivers.tektronix.Keithley_6500.Keithley_6500,
+                    lockin: zhinst.qcodes.driver.devices.base.ZIBaseInstrument,        
+                    sweep: list,
+                    b_sleep: float,
+                    s_sleep: float,
+                    ):
+        
+        self.ivvi.set( b_dac, s )
+        
+        sleep( b_sleep )
+        
+        for s in sweep:
+
+            self.ivvi.set( s_dac, s )
+
+            sleep( s_sleep )
+
+            s_data = self.ivvi.dac_voltages()[ s_dac_n - 1 ]
+            b_data = self.ivvi.dac_voltages()[ b_dac_n - 1 ]
+            ds = lockin.sigouts[ 0 ].amplitudes[ 0 ].value()
+            m1_data = keithley1.amplitude()
+            m2_data = keithley2.amplitude()
+            dm_re = lockin.demods[ 0 ].sample()[ 'x' ][ 0 ]
+            dm_im = lockin.demods[ 0 ].sample()[ 'y' ][ 0 ] 
+
+            if self.figure:
+
+                self.draw_figure_y1y2( m1_data, m2_data, abs( complex( dm_re, dm_im ) )/ds, 'source_m', 'measure', 'dm/ds' )
+                
+            data = np.column_stack( [ b_data, s_data, m1_data, m2_data, ds, dm_re, dm_im ] )  
+            with open( path, 'a+' ) as f:
+
+                np.savetxt( f, data, delimiter = '\t' ) 
+                f.flush()
+                               
+#---------------------------------------------------------------------------------------------------------------------------------------- 
+#---------------------------------------------------------------------------------------------------------------------------------------- 
+#---------------------------------------------------------------------------------------------------------------------------------------- 
+#---------------------------------------------------------------------------------------------------------------------------------------- 
+#---------------------------------------------------------------------------------------------------------------------------------------- 
+    def m2p(
+            self,
+            file_path: str,
+            s: DC_setup.Source,
+            m: DC_setup.Measure,
+            s_sleep: float,
+            repeat = 0
+            ):
+        ''' 
+        This is a 2-points measurement: one source (current or voltage) and one measure (voltage or current). NO LOCKIN
+        You can set a sleeping time after the source reach a value.
+        You can change the repeat number if you want to repeat the measurement several times
+        '''
+        s_dac = s.dac
+        s_dacn = m.dacn
+        k = self.set_keithley( m )
+        sweep = s.sweep_or_bias
+
+        self.start_time( file_path )
+
+        self.hidden_2p( file_path, s_dac, s_dacn, k, sweep, s_sleep )
+
+        if s.sweep_back:
+
+            self.hidden_2p( file_path, s_dac, s_dacn, k, sweep[ ::-1 ], s_sleep )
+
+        if repeat != 0:
+
+            self.sweep_time( file_path )
+
+            for i in range( 0, repeat, 1 ):
+
+                self.hidden_2p( file_path, s_dac, s_dacn, k, sweep, s_sleep )
+
+        self.end_time( file_path )
+#---------------------------------------------------------------------------------------------------------------------------------------- 
+    def m4p(
+            self,
+            file_path: str,
+            s: DC_setup.Source,
+            m_s: DC_setup.Measure,
+            m_m: DC_setup.Measure,
+            s_sleep: float,
+            repeat = 0,
+            silent = True
+            ):
+        '''
+        file_path = file path
+        s = the voltage/ current source you use
+        m_s = measure of source voltage/current (same as applied)
+        m_m = measure of what is not applied
+        '''
+        s_dac = s.dac
+        s_dacn = s.dacn
+        k_s = self.set_keithley( m_s )
+        k_m = self.set_keithley( m_m )
+        sweep = s.sweep_or_bias # sweep the source or step the source (DAC has a function)
+
+        self.start_time( file_path )
+
+        self.hidden_4p( file_path, s_dac, s_dacn, k_s, k_m, sweep, s_sleep, silent )
+
+        if s.sweep_back:
+            
+            self.pcolor = 'ro'
+            
+            self.hidden_4p( file_path, s_dac, s_dacn, k_s, k_m, sweep[ ::-1 ], s_sleep, silent )
+        
+        self.pcolor = 'bo'
+        
+        if repeat != 0:
+
+            self.sweep_time( file_path )
+
+            for i in range( 0, repeat, 1 ):
+
+                self.hidden_4p( file_path, s_dac, s_dacn, k_s, k_m, sweep, s_sleep, silent )
+
+        self.end_time( file_path )
+#---------------------------------------------------------------------------------------------------------------------------------------- 
+    def m4p_lk(
+                self,
+                file_path: str,
+                s: DC_setup.Source,
+                m_s: DC_setup.Measure,
+                m_m: DC_setup.Measure,
+                lk_s: DC_setup.Lock_OUT,
+                lk_m: DC_setup.Lock_IN,
+                s_sleep: float,
+                repeat = 0
+            ):
+
+            s_dac = s.dac
+            s_dacn = s.dacn
+            k_s = self.set_keithley( m_s )
+            k_m = self.set_keithley( m_m )
+            lk = self.set_lockin( lk_s, lk_m ) 
+            sweep = s.sweep_or_bias
+            
+            self.start_time( file_path )
+
+            self.hidden_4p_lock( file_path, s_dac, s_dacn, k_s, k_m, lk, sweep, s_sleep )
+
+            if s.sweep_back:
+
+                self.pcolor = 'ro'
+                
+                self.hidden_4p_lock( file_path, s_dac, s_dacn, k_s, k_m, lk, sweep[ ::-1 ], s_sleep )           
+                
+            self.pcolor = 'bo'
+                
+            if repeat != 0:
+
+                self.sweep_time( file_path )
+
+                for i in range( 0, repeat, 1 ):
+
+                    self.hidden_4p_lock( file_path, s_dac, s_dacn, k_s, k_m, lk, sweep, s_sleep )
+                    
+            self.end_time( file_path )
+            
+            lk.sigouts[ 0 ].on( False )   
+#---------------------------------------------------------------------------------------------------------------------------------------- 
+
+    def bias_2p(
+                self,
+                file_path: str,
+                b: DC_setup.Source,
+                s: DC_setup.Source,
+                m: DC_setup.Measure,
+                b_sleep: float,
+                s_sleep: float,
+                repeat = 0
+            ):
+
+            b_dac = b.dac
+            b_dacn = b.dacn
+            s_dac = s.dac
+            s_dacn = s.dacn
+            k = self.set_keithley( m )
+            sweep = s.sweep_or_bias
+            
+            self.start_time( file_path )
+
+            self.hidden_bias_2p( file_path, b_dac, b_dacn, s_dac, s_dacn, k, sweep, b_sleep, s_sleep )
+
+            if s.sweep_back:
+                
+                self.pcolor = 'ro'
+
+                self.hidden_bias_2p( file_path, b_dac, b_dacn, s_dac, s_dacn, k, sweep[ ::-1 ], b_sleep, s_sleep )
+            
+            self.pcolor = 'bo' 
+            
+            if repeat != 0:
+
+                self.sweep_time( file_path )
+
+                for i in range( 0, repeat, 1 ):
+
+                    self.hidden_bias_2p( file_path, b_dac, b_dacn, s_dac, s_dacn, k, sweep, b_sleep, s_sleep )
+                    
+            self.end_time( file_path )
+            
+#---------------------------------------------------------------------------------------------------------------------------------------- 
+
+    def bias_2p_lk(
+                self,
+                file_path: str,
+                b: DC_setup.Source,
+                s: DC_setup.Source,
+                m: DC_setup.Measure,
+                lk_s: DC_setup.Lock_OUT,
+                lk_m: DC_setup.Lock_IN,
+                b_sleep: float,
+                s_sleep: float,
+                repeat = 0
+            ):
+
+            b_dac = b.dac
+            b_dacn = b.dacn
+            s_dac = s.dac
+            s_dacn = s.dacn
+            m = self.set_keithley( measure )
+            lk = self.set_lockin( lk_s, lk_m )
+            sweep = s.sweep_or_bias
+            
+            self.start_time( file_path )
+
+            self.hidden_bias_2p_lock( file_path, b_dac, b_dacn, s_dac, s_dacn, k, lk, sweep, b_sleep, s_sleep )
+
+            if s.sweep_back:
+
+                self.hidden_bias_2p_lock( file_path, b_dac, b_dacn, s_dac, s_dacn, k, lk, sweep[ ::-1 ], b_sleep, s_sleep )
+                
+            if repeat != 0:
+
+                self.sweep_time( file_path )
+
+                for i in range( 0, repeat, 1 ):
+
+                    self.hidden_bias_2p_lock( file_path, b_dac, b_dacn, s_dac, s_dacn, k, lk, sweep, b_sleep, s_sleep )
+                    
+            self.end_time( file_path )
+            
+            lk.sigouts[ 0 ].on( False )   
+#---------------------------------------------------------------------------------------------------------------------------------------- 
+    @multimethod
+    def bias_4p(
+                self,
+                file_path: str,
+                b: DC_setup.Source,
+                s: DC_setup.Source,
+                m_s: DC_setup.Measure,
+                m_m: DC_setup.Measure,
+                b_sleep: float,
+                s_sleep: float,
+                repeat = 0
+            ):
+
+            b_dac = b.dac
+            b_dacn = b.dacn
+            s_dac = s.dac
+            s_dacn = s.dacn
+            k_s = self.set_keithley( m_s )
+            k_m = self.set_keithley( m_m )           
+            sweep = source.sweep_or_bias
+            
+            self.start_time( file_path )
+
+            self.hidden_bias_4p( file_path, b_dac, b_dacn, s_dac, s_dacn, k_s, k_m, sweep, b_sleep, s_sleep )
+
+            if s.sweep_back:
+
+                self.hidden_bias_4p( file_path, b_dac, b_dacn, s_dac, s_dacn, k_s, k_m, sweep[ ::-1 ], b_sleep, s_sleep )
+                
+            if repeat != 0:
+
+                self.sweep_time( file_path )
+
+                for i in range( 0, repeat, 1 ):
+
+                    self.hidden_bias_4p( file_path, b_dac, b_dacn, s_dac, s_dacn, k_s, k_m, sweep, b_sleep, s_sleep )
+                    
+            self.end_time( file_path )
+            
+#---------------------------------------------------------------------------------------------------------------------------------------- 
+    @multimethod
+    def bias_4p(
+                self,
+                file_path: str,
+                b: DC_setup.Source,
+                s: DC_setup.Source,
+                m_s: DC_setup.Measure,
+                m_m: DC_setup.Measure,
+                lk_s: DC_setup.Lock_OUT,
+                lk_m: DC_setup.Lock_IN,
+                b_sleep: float,
+                s_sleep: float,
+                repeat = 0
+            ):
+            '''
+            UNCLEAR FUNCTION!!!
+            b: bias (either magnetic field or gate)            
+            s: source
+            m_s: measure source type (voltage/ current)
+            m_m: measure what is not source type 
+            lk_s: oscillating source you send with the lockin 
+            lk_m: signal you demodulate with locking
+            b_sleep: sleep time after each bias point
+            s_sleep: sleep time after each source point
+            '''
+            b_dac = b.dac
+            b_dacn = b.dacn
+            s_dac = s.dac
+            s_dacn = s.dacn
+            k_s = self.set_keithley( m_s )
+            k_m = self.set_keithley( m_m )
+            lk = self.set_lockin( lk_s, lk_m ) 
+            sweep = s.sweep_or_bias
+            
+            self.start_time( file_path )
+
+            self.hidden_bias_4p_lock( file_path, b_dac, b_dacn, s_dac, s_dacn, k_s, k_m, lk, sweep, b_sleep, s_sleep )
+
+            if s.sweep_back:
+
+                self.hidden_bias_4p_lock( file_path, b_dac, b_dacn, s_dac, s_dacn, k_s, k_m, lk, sweep[ ::-1 ], b_sleep, s_sleep )
+                
+            if repeat != 0:
+
+                self.sweep_time( file_path )
+
+                for i in range( 0, repeat, 1 ):
+
+                    self.hidden_bias_4p_lock( file_path, b_dac, b_dacn, s_dac, s_dacn, k_s, k_m, lk, sweep, b_sleep, s_sleep )
+                    
+            self.end_time( file_path )
+            
+            lk.sigouts[ 0 ].on( False )   
+            
+    def hidden_4p_w_PS(
+            self,
+            path: str,
+            dac: str,
+            dac_n: int,
+            keithley1: qcodes.instrument_drivers.tektronix.Keithley_6500.Keithley_6500,
+            keithley2: qcodes.instrument_drivers.tektronix.Keithley_6500.Keithley_6500,
+            sweep: list,
+            s_sleep: float,
+            gate_voltage: float = None,
+            magnetic_field: Tuple[float, float, float] = None,
+            silent=True
+        ):
+        '''
+        INPUT:
+        path: path
+        dac: used dac (source)
+        dacn: used dacn (source)
+        sweep: rangeo of sleep
+        s_sleep: after every point, how long you wait
+        gate_voltage: Gate voltage to include in the first column of data
+        magnetic_field: Magnetic field values to include in the first three columns of data as a tuple of three floats (Bx, By, Bz)
+        silent: Flag to suppress printing progress messages
+        
+        EXAMPLE:
+        # Include only gate voltage
+        station.hidden_4p_w_PS(path, dac, dac_n, keithley1, keithley2, sweep, s_sleep, gate_voltage=gate_voltage)
+        # Include only magnetic field values
+        station.hidden_4p_w_PS(path, dac, dac_n, keithley1, keithley2, sweep, s_sleep, magnetic_field=(Bx, By, Bz))
+        # Include both gate voltage and magnetic field values
+        station.hidden_4p_w_PS(path, dac, dac_n, keithley1, keithley2, sweep, s_sleep, gate_voltage=gate_voltage, magnetic_field=(Bx, By, Bz))
+        
+        KNOWN BUGS:
+        --------
+        Future possible additions:
+        include maximum sweeping speed
+        '''
+        for s in sweep:
+            if not silent and s == int(round(len(sweep))/2):
+                print(f'Halfway there: point {int(round(len(sweep))/2)}/{len(sweep)}')
+            self.ivvi.set(dac, s)
+
+            sleep(s_sleep)
+
+            s_data = self.ivvi.dac_voltages()[dac_n - 1]
+            m1_data = keithley1.amplitude()
+            m2_data = keithley2.amplitude()
+
+            # Include gate voltage and magnetic field values
+            #print(gate_voltage, magnetic_field)
+            if gate_voltage is not None and magnetic_field is not None:
+                data = np.column_stack([gate_voltage, *magnetic_field, s_data, m1_data, m2_data])
+            elif gate_voltage is not None:
+                data = np.column_stack([gate_voltage, s_data, m1_data, m2_data])
+            elif magnetic_field is not None:
+                data = np.column_stack([*magnetic_field, s_data, m1_data, m2_data])
+            else:
+                data = np.column_stack([s_data, m1_data, m2_data])
+
+            with open(path, 'a+') as f:
+                np.savetxt(f, data, delimiter='\t')
+                f.flush()
+                
+
+    def m4p_w_PS(
+            self,
+            file_path: str,
+            s: DC_setup.Source,
+            m_s: DC_setup.Measure,
+            m_m: DC_setup.Measure,
+            s_sleep: float,
+            gate_voltage: float = None,
+            magnetic_field: Tuple[float, float, float] = None,
+            repeat: int = 0,
+            silent: bool = True
+            ):
+        '''
+        INPUT
+        measure 4 point with parameter sweep
+        file_path = file path
+        s = the voltage/ current source you use
+        m_s = measure of source current or voltage 
+              !! Order has to be same as in setup!!
+        m_m = measure of what is not applied
+              !! Order has to be same as in setup!!
+        s_sleep = time to sleep after each measurement
+        gate_voltage = gate voltage to include in the data (default is None)
+        magnetic_field = magnetic field values to include in the data as a tuple of three floats (Bx, By, Bz) (default is None)
+        repeat = number of repetitions (default is 0)
+        silent = flag to suppress printing progress messages (default is True)
+        
+        EXAMPLE:
+        #Include only gate voltage
+        station.m4p_w_PS(file_path, voltage_source, measure_current, measure_voltage, s_sleep=0.1, gate_voltage=gate_voltage)
+        #Include only magnetic field values
+        station.m4p_w_PS(file_path, voltage_source, measure_current, measure_voltage, s_sleep=0.1, magnetic_field=(Bx, By, Bz))
+        #Include both gate voltage and magnetic field values
+        station.m4p_w_PS(file_path, voltage_source, measure_current, measure_voltage, s_sleep=0.1, gate_voltage=gate_voltage, magnetic_field=(Bx, By, Bz))
+        '''
+        s_dac = s.dac
+        s_dacn = s.dacn
+        k_s = self.set_keithley( m_s )
+        k_m = self.set_keithley( m_m )
+        sweep = s.sweep_or_bias # sweep the source or step the source (DAC has a function)
+
+        self.start_time( file_path )
+
+        self.hidden_4p_w_PS(file_path, s_dac, s_dacn, k_s, k_m, sweep, s_sleep, gate_voltage, magnetic_field, silent)
+
+        if s.sweep_back:
+            
+            self.pcolor = 'ro'
+            
+            self.hidden_4p_w_PS( file_path, s_dac, s_dacn, k_s, k_m, sweep[ ::-1 ], s_sleep, gate_voltage, magnetic_field, silent )
+        
+        self.pcolor = 'bo'
+        
+        if repeat != 0:
+
+            self.sweep_time( file_path )
+
+            for i in range( 0, repeat, 1 ):
+
+                self.hidden_4p_w_PS( file_path, s_dac, s_dacn, k_s, k_m, sweep, s_sleep, gate_voltage, magnetic_field, silent )
+
+        self.end_time( file_path )
+
+
+    def hidden_4p_lock_w_PS(
+                    self,
+                    path: str,
+                    dac: str,
+                    dac_n: int,
+                    keithley1: qcodes.instrument_drivers.tektronix.Keithley_6500.Keithley_6500,
+                    keithley2: qcodes.instrument_drivers.tektronix.Keithley_6500.Keithley_6500,
+                    lockin: zhinst.qcodes.driver.devices.base.ZIBaseInstrument,
+                    sweep: list,
+                    s_sleep: float,
+                    gate_voltage: float = None,
+                    magnetic_field: Tuple[float, float, float] = None,
+                    silent=True
+                    ):
+        '''
+        Hidden 4point measurement using lockin and parameter sweep
+        ### CLEAN UP THIS COMMENT!!! COPIED
+        INPUT: 
+        path: path
+        dac: used dac (source)
+        dacn: used dacn (source)
+        sweep: rangeo of sleep
+        s_sleep: after every point, how long you wait
+        gate_voltage: Gate voltage to include in the first column of data
+        magnetic_field: Magnetic field values to include in the first three columns of data as a tuple of three floats (Bx, By, Bz)
+        silent: Flag to suppress printing progress messages
+        
+        EXAMPLE:
+        # Include only gate voltage
+        station.hidden_4p_w_PS(path, dac, dac_n, keithley1, keithley2, sweep, s_sleep, gate_voltage=gate_voltage)
+        # Include only magnetic field values
+        station.hidden_4p_w_PS(path, dac, dac_n, keithley1, keithley2, sweep, s_sleep, magnetic_field=(Bx, By, Bz))
+        # Include both gate voltage and magnetic field values
+        station.hidden_4p_w_PS(path, dac, dac_n, keithley1, keithley2, sweep, s_sleep, gate_voltage=gate_voltage, magnetic_field=(Bx, By, Bz))
+        
+        KNOWN BUGS:
+        --------
+        Future possible additions:
+        include maximum sweeping speed'''
+       
+        for s in sweep:
+            if not silent and s == int(round(len(sweep))/2):
+                    print(f'Halfway there: point {int(round(len(sweep))/2)}/{len(sweep)}')
+            self.ivvi.set( dac, s )
+            sleep( s_sleep )
+
+            s_data = self.ivvi.dac_voltages()[ dac_n - 1 ]
+            ds = lockin.sigouts[ 0 ].amplitudes[ 0 ].value()
+            m1_data = keithley1.amplitude()
+            m2_data = keithley2.amplitude()
+            dm_re = lockin.demods[ 0 ].sample()[ 'x' ][ 0 ]
+            dm_im = lockin.demods[ 0 ].sample()[ 'y' ][ 0 ] 
+
+#            if self.figure:
+#               self.draw_figure_y1y2( m1_data, m2_data, abs( complex( dm_re, dm_im ) )/ds,'source_m', 'measure', 'dm/ds' )
+            if gate_voltage is not None and magnetic_field is not None:
+                data = np.column_stack([gate_voltage, *magnetic_field,  s_data, m1_data, m2_data, ds, dm_re, dm_im ])
+            elif gate_voltage is not None:
+                data = np.column_stack([gate_voltage,  s_data, m1_data, m2_data, ds, dm_re, dm_im ])
+            elif magnetic_field is not None:
+                data = np.column_stack([*magnetic_field,  s_data, m1_data, m2_data, ds, dm_re, dm_im ])
+            else:
+                data = np.column_stack([ s_data, m1_data, m2_data, ds, dm_re, dm_im ])
+
+            with open( path, 'a+' ) as f:
+                np.savetxt( f, data, delimiter = '\t' ) 
+                f.flush() 
+                
+                
+    def m4p_lk_w_PS(
+                self,
+                file_path: str,
+                s: DC_setup.Source,
+                m_s: DC_setup.Measure,
+                m_m: DC_setup.Measure,
+                lk_s: DC_setup.Lock_OUT,
+                lk_m: DC_setup.Lock_IN,
+                s_sleep: float,
+                gate_voltage: float = None,
+                magnetic_field: Tuple[float, float, float] = None,
+                repeat: int = 0,
+                safety_on: bool = True,
+                silent: bool = True
+            ):
+        '''
+        INPUT
+        measure 4 point with parameter sweep
+        file_path = file path
+        s = the voltage/ current source you use
+        m_s = measure of source current or voltage 
+              !! Order has to be same as in setup!!
+        m_m = measure of what is not applied
+              !! Order has to be same as in setup!!
+        t_sleep = time to sleep after each measurement
+        gate_voltage = gate voltage to include in the data (default is None)
+        magnetic_field = magnetic field values to include in the data as a tuple of three floats (Bx, By, Bz) (default is None)
+        repeat = number of repetitions (default is 0)
+        safety_on: right now checks for the safety of tc >> 1/f in lockin
+        silent = flag to suppress printing progress messages (default is True)
+        
+        EXAMPLE:
+        #Include only gate voltage
+        station.m4p_w_PS(file_path, voltage_source, measure_current, measure_voltage, t_sleep=0.1, gate_voltage=gate_voltage)
+        #Include only magnetic field values
+        station.m4p_w_PS(file_path, voltage_source, measure_current, measure_voltage, t_sleep=0.1, magnetic_field=(Bx, By, Bz))
+        #Include both gate voltage and magnetic field values
+        station.m4p_w_PS(file_path, voltage_source, measure_current, measure_voltage, t_sleep=0.1, gate_voltage=gate_voltage, magnetic_field=(Bx, By, Bz))
+        '''
+        s_dac = s.dac
+        s_dacn = s.dacn
+        k_s = self.set_keithley( m_s )
+        k_m = self.set_keithley( m_m )
+        lk = self.set_lockin( lk_s, lk_m ) 
+        sweep = s.sweep_or_bias
+        
+        if safety_on:
+        # Test whether tc >> 1/ 2*pi*freq
+            self.tc_freq_check(lk_s, lk_m)
+            
+        self.start_time( file_path )
+        self.hidden_4p_lock_w_PS( file_path, s_dac, s_dacn, k_s, k_m, lk, sweep, s_sleep, gate_voltage, magnetic_field, silent ) #fill in
+
+        if s.sweep_back:
+            # This one wont work - fix it for hidden 4p first!
+            self.pcolor = 'ro'
+            
+            self.hidden_4p_lock_w_PS( file_path, s_dac, s_dacn, k_s, k_m, lk, sweep[ ::-1 ], s_sleep, gate_voltage, magnetic_field, silent )           
+            
+        self.pcolor = 'bo'
+            
+        if repeat != 0:
+
+            self.sweep_time( file_path )
+
+            for i in range( 0, repeat, 1 ):
+
+                self.hidden_4p_lock_w_PS( file_path, s_dac, s_dacn, k_s, k_m, lk, sweep, s_sleep, gate_voltage, magnetic_field, silent )
+                
+        self.end_time( file_path )
+        
+        lk.sigouts[ 0 ].on( False )   
+#----------------------------------------------------------------------------------------------------------------------------------------  
+#----------------------------------------------------------------------------------------------------------------------------------------  
+#----------------------------------------------------------------------------------------------------------------------------------------  
+#----------------------------------------------------------------------------------------------------------------------------------------  
+#----------------------------------------------------------------------------------------------------------------------------------------  
