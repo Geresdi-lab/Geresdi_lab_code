@@ -113,13 +113,16 @@ class plotting(object):
         
         
         
-    def plotfit(self, title= '', location = 'best', fontsize_user = 12, color_fit = 'g', linestyle_fit ='-', S21_or_S11 = 'S21', max_xticks = 0, max_yticks = 0):
+    def plotfit(self, title= '', location = 'best', fontsize_user = 12, 
+    color_exp = 'tab:blue', linestyle_exp = '-', linewidth_exp = 3, 
+    color_fit = 'tab:green', linestyle_fit ='-', linewidth_fit = 2,
+    S21_or_S11 = 'S21', max_xticks = 0, max_yticks = 0):
         real = self.z_data_raw.real
         imag = self.z_data_raw.imag
         real2 = self.z_data_sim.real
         imag2 = self.z_data_sim.imag
-        plt.plot(self.f_data*1e-9,np.absolute(self.z_data_raw),label='Experiment', color = 'tab:blue')
-        plt.plot(self.f_data*1e-9,np.absolute(self.z_data_sim),label='Fit', color = color_fit, linestyle = linestyle_fit)
+        plt.plot(self.f_data*1e-9,np.absolute(self.z_data_raw),label='Experiment', color = color_exp,  linestyle = linestyle_exp, linewidth = linewidth_exp)
+        plt.plot(self.f_data*1e-9,np.absolute(self.z_data_sim),label='Fit', color = color_fit, linestyle = linestyle_fit, linewidth = linewidth_fit)
         plt.xlabel('f (GHz)', fontsize = fontsize_user)
         if S21_or_S11 == 'S21':
             plt.ylabel(r'|S$_{21}$|', fontsize = fontsize_user)
@@ -136,14 +139,19 @@ class plotting(object):
             plt.locator_params(axis='y', nbins=max_yticks)
         plt.tight_layout()
         plt.show()
+        
 
-    def plotfitcircle(self, title= '', location = 'best', fontsize_user = 12, color_fit = 'g', linestyle_fit ='-', S21_or_S11 = 'S21', max_xticks = 0, max_yticks = 0):
+    def plotfitcircle(self, title= '', location = 'best', fontsize_user = 12, 
+    color_exp = 'tab:blue', linestyle_exp = '-', linewidth_exp = 3, 
+    color_fit = 'tab:green', linestyle_fit ='-', linewidth_fit = 2,
+    S21_or_S11 = 'S21', max_xticks = 0, max_yticks = 0):
+    
         real = self.z_data_raw.real
         imag = self.z_data_raw.imag
         real2 = self.z_data_sim.real
         imag2 = self.z_data_sim.imag
-        plt.plot(real,imag,label='Experiment', color = 'tab:blue')
-        plt.plot(real2,imag2,label='Fit', color = color_fit, linestyle = linestyle_fit)
+        plt.plot(real,imag,label='Experiment', color = color_exp,  linestyle = linestyle_exp, linewidth = linewidth_exp)
+        plt.plot(real2,imag2,label='Fit', color = color_fit, linestyle = linestyle_fit, linewidth = linewidth_fit)
         if S21_or_S11 == 'S21':
             plt.xlabel('Re(S$_{21}$)', fontsize = fontsize_user)
             plt.ylabel('Im(S$_{21}$)', fontsize = fontsize_user)
@@ -158,15 +166,65 @@ class plotting(object):
             plt.locator_params(axis='x', nbins=max_xticks)
         if max_yticks:
             plt.locator_params(axis='y', nbins=max_yticks)
-        plt.plot(real2,imag2,label='Fit', color = 'tab:green')
-        plt.xlabel('Re(S21)', fontsize = fontsize_user)
-        plt.ylabel('Im(S21)', fontsize = fontsize_user)
-        plt.legend(loc = location)
+        #plt.plot(real2,imag2,label='Fit', color = 'tab:green')
+        plt.legend(loc = location, fontsize = fontsize_user)
         plt.title(title)
         plt.tight_layout()
         plt.show()
 
+    def plot_raw_data_mag(self, title= '', location = 'best', fontsize_user = 12, 
+    color_exp = 'tab:blue', linestyle_exp = '-', linewidth_exp = 3, 
+    S21_or_S11 = 'S21', max_xticks = 0, max_yticks = 0):
+        real = self.z_data_raw.real
+        imag = self.z_data_raw.imag
 
+        plt.plot(self.f_data*1e-9,np.absolute(self.z_data_raw),label='Experiment', color = color_exp,  linestyle = linestyle_exp, linewidth = linewidth_exp)
+        plt.xlabel('f (GHz)', fontsize = fontsize_user)
+        if S21_or_S11 == 'S21':
+            plt.ylabel(r'|S$_{21}$|', fontsize = fontsize_user)
+        else:
+            plt.ylabel(r'|S$_{11}$|', fontsize = fontsize_user)
+        plt.xticks(fontsize= fontsize_user)
+        plt.yticks(fontsize= fontsize_user)
+        plt.legend(loc = location, fontsize = fontsize_user)
+        #plt.title("Magnitude fit")
+        plt.title(title)
+        if max_xticks:
+            plt.locator_params(axis='x', nbins=max_xticks)
+        if max_yticks:
+            plt.locator_params(axis='y', nbins=max_yticks)
+        plt.tight_layout()
+        plt.show()
+        
+        
+    def plot_raw_data_circle(self, title= '', location = 'best', fontsize_user = 12, 
+    color_exp = 'tab:blue', linestyle_exp = '-', linewidth_exp = 3, 
+    S21_or_S11 = 'S21', max_xticks = 0, max_yticks = 0):
+    
+        real = self.z_data_raw.real
+        imag = self.z_data_raw.imag
+
+        plt.plot(real,imag,label='Experiment', color = color_exp,  linestyle = linestyle_exp, linewidth = linewidth_exp)
+        if S21_or_S11 == 'S21':
+            plt.xlabel('Re(S$_{21}$)', fontsize = fontsize_user)
+            plt.ylabel('Im(S$_{21}$)', fontsize = fontsize_user)
+        else:
+            plt.xlabel('Re(S$_{11}$)', fontsize = fontsize_user)
+            plt.ylabel('Im(S$_{11}$)', fontsize = fontsize_user)
+        plt.xticks(fontsize= fontsize_user)
+        plt.yticks(fontsize= fontsize_user)
+        plt.legend(loc = location, fontsize = fontsize_user)
+        plt.title(title)
+        if max_xticks:
+            plt.locator_params(axis='x', nbins=max_xticks)
+        if max_yticks:
+            plt.locator_params(axis='y', nbins=max_yticks)
+        #plt.plot(real2,imag2,label='Fit', color = 'tab:green')
+        plt.legend(loc = location, fontsize = fontsize_user)
+        plt.title(title)
+        plt.tight_layout()
+        plt.show()    
+        
     def plotcalibrateddata(self, fontsize_user = 12):
         real = self.z_data.real
         imag = self.z_data.imag
