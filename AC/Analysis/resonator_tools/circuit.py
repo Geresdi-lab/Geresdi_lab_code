@@ -23,7 +23,6 @@ class reflection_port_original(circlefit, save_load, plotting, calibration):
     '''
     normal direct port probed in reflection
     '''
-
     def __init__(self, f_data=None, z_data_raw=None):
         self.porttype = 'direct'
         self.fitresults = {}
@@ -57,6 +56,7 @@ class reflection_port_original(circlefit, save_load, plotting, calibration):
         modifies the cable delay until the shape Im(S21) vs Re(S21) is circular
         see "do_calibration"
         '''
+
         maxval = np.max(np.absolute(z_data))
         z_data = z_data / maxval
         A1, A2, A3, A4, fr, Ql = self._fit_skewed_lorentzian(f_data, z_data)
@@ -393,7 +393,7 @@ class reflection_port_original(circlefit, save_load, plotting, calibration):
 
         return p_final[0][3], params
 
-class reflection_port_phi(circlefit, save_load, plotting, calibration):
+class reflection_port(circlefit, save_load, plotting, calibration):
     '''
     normal direct port probed in reflection
     '''
@@ -621,7 +621,7 @@ class reflection_port_phi(circlefit, save_load, plotting, calibration):
             delay, amp_norm, alpha, fr, Ql, A2, frcal = \
                 self._manual_calibrate(self.f_data[self._fid], self.z_data_raw[self._fid], ignoreslope=True,
                                        guessdelay=False, fixed_delay=electric_delay)
-
+            #print(f'delay val from _manu calibrate is {delay}')
             #print(amp_norm, alpha, delay, fr, Ql, A2,)
 #            delay, alpha = self.do_alpha_calibration(self.f_data[self._fid],
 #                                    self.z_data_raw[self._fid],
